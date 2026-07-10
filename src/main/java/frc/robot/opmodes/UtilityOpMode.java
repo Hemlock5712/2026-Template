@@ -28,7 +28,7 @@ public class UtilityOpMode extends PeriodicOpMode {
   private final Command routine;
 
   public UtilityOpMode(Robot robot) {
-    routine = robot.superstructure.stow();
+    routine = robot.stow();
   }
 
   @Override

@@ -44,10 +44,10 @@ public class StateMachineTeleop extends PeriodicOpMode {
     // 2. Add states. Each state owns one command. The presets hold their pose forever (the machine
     //    cancels them on a transition); prep's command FINISHES when the arm reaches the scoring
     //    angle, which is what lets it use a completion transition below.
-    State stowed = sm.addState(robot.superstructure.stow());
-    State pickup = sm.addState(robot.superstructure.intake());
+    State stowed = sm.addState(robot.stow());
+    State pickup = sm.addState(robot.intake());
     State prep = sm.addState(robot.arm.scoringAndWait()); // finishes when the arm arrives
-    State scoring = sm.addState(robot.superstructure.score());
+    State scoring = sm.addState(robot.score());
 
     // 3. Every machine needs a starting state.
     sm.setInitialState(stowed);

@@ -91,10 +91,10 @@ The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `Appl
   zeroed and marked "NEEDS TUNING"** — this is a template.
 - [flywheel/Flywheel.java](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java) — single
   `TalonFX` (CAN 21), `MotionMagicVelocityVoltage`, shooting speed 25 RPS. `spinUp()` / `stop()`.
-- [CommandFactory.java](src/main/java/frc/robot/subsystems/CommandFactory.java) — the
-  "superstructure" coordinator (NOT a `Mechanism`). Composes arm + flywheel into one command per
-  robot pose: `stow()`, `intake()`, `score()`. On [Robot](src/main/java/frc/robot/Robot.java) it is
-  the field named `superstructure`.
+- **Superstructure poses** — the arm + flywheel coordinator. These are plain methods at the bottom
+  of [Robot.java](src/main/java/frc/robot/Robot.java) (NOT a separate class or `Mechanism`): each
+  composes arm + flywheel into one command per robot pose — `stow()`, `intake()`, `score()`,
+  `autoScore()`. An OpMode calls them directly on the `Robot` reference, e.g. `robot.stow()`.
 
 ### Vision
 
@@ -160,11 +160,11 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 
 | Topic | File |
 | --- | --- |
-| Hardware ownership + scheduler + logging start | [Robot.java](src/main/java/frc/robot/Robot.java) |
+| Hardware ownership + scheduler + logging start + superstructure poses | [Robot.java](src/main/java/frc/robot/Robot.java) |
 | Teleop / autonomous / utility modes | [opmodes/](src/main/java/frc/robot/opmodes/) |
 | Swerve wrapper (Mechanism) | [DriveMechanism.java](src/main/java/frc/robot/subsystems/DriveMechanism.java) |
 | Swerve hardware (CTRE) | [CommandSwerveDrivetrain.java](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java) |
-| Example mechanisms | [arm/Arm.java](src/main/java/frc/robot/subsystems/arm/Arm.java), [flywheel/Flywheel.java](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java), [CommandFactory.java](src/main/java/frc/robot/subsystems/CommandFactory.java) |
+| Example mechanisms | [arm/Arm.java](src/main/java/frc/robot/subsystems/arm/Arm.java), [flywheel/Flywheel.java](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java) |
 | Drive commands | [commands/](src/main/java/frc/robot/commands/) |
 | v2-style command base | [utils/ClassicCommand.java](src/main/java/frc/robot/utils/ClassicCommand.java) |
 | Swerve constants / IDs / gains | [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) |

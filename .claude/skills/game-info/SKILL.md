@@ -14,7 +14,7 @@ mechanical / software is in the **`robot-description`** skill instead.
 This is a **WPILib 2027-alpha** template (the 2026→2027 migration target). It ships as a **starting
 point, not a game-specific robot**: the [Arm](src/main/java/frc/robot/subsystems/arm/Arm.java),
 [Flywheel](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java), and superstructure
-[poses](src/main/java/frc/robot/subsystems/CommandFactory.java) (`stow`/`intake`/`score`) are
+[poses](src/main/java/frc/robot/Robot.java) (`stow`/`intake`/`score`) are
 **illustrative examples** of intake-and-shoot mechanics, not the real season's mechanisms. There are
 **no field-dimension constants, no scoring-zone poses, and no `AprilTagFieldLayout` wired in yet.**
 

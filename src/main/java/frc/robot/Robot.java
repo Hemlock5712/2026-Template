@@ -5,12 +5,12 @@
 package frc.robot;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
-import frc.robot.subsystems.CommandFactory;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
 import frc.robot.subsystems.vision.Limelight;
 import frc.robot.utils.SimStartup;
+import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.command3.button.RobotModeTriggers;
 import org.wpilib.driverstation.DriverStation;
@@ -31,10 +31,10 @@ import org.wpilib.system.DataLogManager;
 public class Robot extends OpModeRobot {
   public final DriveMechanism drivetrain = new DriveMechanism();
 
-  /* Example mechanisms coordinated by the Superstructure. */
+  /* Example mechanisms. The superstructure poses that coordinate them live at the bottom of this
+   * class (stow / intake / score / autoScore) so an OpMode can just call robot.stow(). */
   public final Arm arm = new Arm();
   public final Flywheel flywheel = new Flywheel();
-  public final CommandFactory superstructure = new CommandFactory(arm, flywheel);
 
   public Robot() {
     // Start on-robot logging. There is no AdvantageKit in this template; the "logging-only" story
@@ -64,5 +64,40 @@ public class Robot extends OpModeRobot {
   @Override
   public void robotPeriodic() {
     Scheduler.getDefault().run();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Superstructure - coordinates the Arm and Flywheel so an OpMode gets one
+  // method per robot "pose" instead of juggling both mechanisms by hand. These
+  // live here (rather than in a separate class) so an OpMode reaches them the
+  // same way it reaches the hardware: robot.stow(), robot.score(), and so on.
+  //
+  // Each method returns a command composed of arm and flywheel commands. Because
+  // a command inherits its children's requirements, the result requires both
+  // subsystems, and Command.parallel(...) runs them at the same time.
+  // ---------------------------------------------------------------------------
+
+  /** Stow for travel: arm vertical, flywheel stopped. */
+  public Command stow() {
+    return Command.parallel(arm.vertical(), flywheel.stop()).named("Stow");
+  }
+
+  /** Ground intake: arm down, flywheel stopped. */
+  public Command intake() {
+    return Command.parallel(arm.horizontal(), flywheel.stop()).named("Intake");
+  }
+
+  /** Prepare to score: arm up, flywheel spinning. */
+  public Command score() {
+    return Command.parallel(arm.scoring(), flywheel.spinUp()).named("Score");
+  }
+
+  /**
+   * Auto-score prep: raise the arm to its scoring pose and hold shooting speed. Like {@link
+   * #score()} but the arm command finishes once it reaches the pose ({@code scoringAndWait});
+   * {@code spinUp} runs forever, so the group runs until it is cancelled.
+   */
+  public Command autoScore() {
+    return Command.parallel(arm.scoringAndWait(), flywheel.spinUp()).named("AutoScore");
   }
 }

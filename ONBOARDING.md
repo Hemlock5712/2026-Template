@@ -18,6 +18,35 @@ Commands v3; only the top-level *wiring* is different.
 - The **driver station lists those classes by name**. Selecting one *constructs* it; that's
   when its button bindings / routine get set up. No `RobotContainer`, no `SendableChooser`.
 
+## Reading order (if you're new, go in this order)
+
+The files are **not** equally hard. Start with the small, self-contained ones and work up; the
+drive and vision code is a real step up in difficulty, so it comes last on purpose.
+
+**Start here — the core pattern:**
+
+1. **`ONBOARDING.md`** (this file) — the mental model above.
+2. **`subsystems/arm/Arm.java`** — the simplest subsystem. A subsystem owns its motor, hides its
+   setters, and hands out **commands**. Learn this one shape and most of the codebase follows.
+3. **`subsystems/flywheel/Flywheel.java`** — the same shape again, so the pattern sticks.
+4. **`Robot.java`** — how the subsystems are owned in one place, and how `stow()` / `intake()` /
+   `score()` combine two mechanisms into one command.
+5. **`opmodes/TeleopOpMode.java`** — how controller buttons get wired to those commands.
+6. **`opmodes/AutonomousOpMode.java`** and **`opmodes/UtilityOpMode.java`** — the other two mode
+   kinds, both tiny.
+7. **`opmodes/StateMachineTeleop.java`** — an optional second way to organize teleop (named states
+   + transitions instead of hold-a-button).
+
+**Advanced — don't start here.** This is real, working code, but it layers PID, feedforward, motion
+profiling, coordinate frames, and vision all at once. Come back once the pattern above feels
+comfortable:
+
+- `subsystems/DriveMechanism.java` — the swerve wrapper.
+- `commands/DriveToPose.java`, `commands/DriveToTag.java` — drive to a field pose / to an AprilTag.
+- `subsystems/CommandSwerveDrivetrain.java`, `generated/TunerConstants.java`,
+  `utils/Telemetry.java`, `subsystems/vision/LimelightHelpers.java` — generated or vendored
+  infrastructure you rarely edit by hand.
+
 ## If you know `RobotContainer`, here's the map
 
 | Old way (`RobotContainer` + `TimedRobot`) | This template (OpMode) |

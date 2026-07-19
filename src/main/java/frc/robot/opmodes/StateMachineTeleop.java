@@ -41,12 +41,15 @@ public class StateMachineTeleop extends PeriodicOpMode {
     // 1. Construct - the name is required and shows up in telemetry.
     StateMachine sm = new StateMachine("Superstructure");
 
-    // 2. Add states. Each state owns one command. The presets hold their pose forever (the machine
-    //    cancels them on a transition); prep's command FINISHES when the arm reaches the scoring
-    //    angle, which is what lets it use a completion transition below.
+    // 2. Add states. Each state owns one command. The presets hold their pose forever - which is
+    //    fine here, because when(...) transitions don't wait for a command to finish; the machine
+    //    CANCELS the old state's hold and starts the new one. Prep is the exception: .until(...)
+    //    gives its hold a finish line, which is what lets it use a completion transition below.
     State stowed = sm.addState(robot.stow());
     State pickup = sm.addState(robot.intake());
-    State prep = sm.addState(robot.arm.scoringAndWait()); // finishes when the arm arrives
+    State prep =
+        sm.addState(
+            robot.arm.scoring().until(robot.arm::isAtTarget).named("scoring until at target"));
     State scoring = sm.addState(robot.score());
 
     // 3. Every machine needs a starting state.

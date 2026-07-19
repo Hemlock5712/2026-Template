@@ -77,27 +77,31 @@ public class Robot extends OpModeRobot {
   // subsystems, and Command.parallel(...) runs them at the same time.
   // ---------------------------------------------------------------------------
 
-  /** Stow for travel: arm vertical, flywheel stopped. */
+  /** Stow for travel: arm vertical, flywheel stopped. Holds forever - never wait on it. */
   public Command stow() {
-    return Command.parallel(arm.vertical(), flywheel.stop()).named("Stow");
+    return Command.parallel(arm.vertical(), flywheel.stop()).named("Stow (hold)");
   }
 
-  /** Ground intake: arm down, flywheel stopped. */
+  /** Ground intake: arm down, flywheel stopped. Holds forever. */
   public Command intake() {
-    return Command.parallel(arm.horizontal(), flywheel.stop()).named("Intake");
+    return Command.parallel(arm.horizontal(), flywheel.stop()).named("Intake (hold)");
   }
 
-  /** Prepare to score: arm up, flywheel spinning. */
+  /** Prepare to score: arm up, flywheel spinning. Holds forever. */
   public Command score() {
-    return Command.parallel(arm.scoring(), flywheel.spinUp()).named("Score");
+    return Command.parallel(arm.scoring(), flywheel.spinUp()).named("Score (hold)");
   }
 
   /**
    * Auto-score prep: raise the arm to its scoring pose and hold shooting speed. Like {@link
-   * #score()} but the arm command finishes once it reaches the pose ({@code scoringAndWait});
-   * {@code spinUp} runs forever, so the group runs until it is cancelled.
+   * #score()}, but {@code .until(...)} gives the arm's hold a finish line - that's the pattern for
+   * making any hold finish, applied at the call site. {@code spinUp} still runs forever, so the
+   * group as a whole is a hold too.
    */
   public Command autoScore() {
-    return Command.parallel(arm.scoringAndWait(), flywheel.spinUp()).named("AutoScore");
+    return Command.parallel(
+            arm.scoring().until(arm::isAtTarget).named("scoring until at target"),
+            flywheel.spinUp())
+        .named("AutoScore (hold)");
   }
 }

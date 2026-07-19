@@ -57,15 +57,17 @@ public class Flywheel extends Mechanism {
 
   // The hold commands below use runRepeatedly, which re-sends the request every loop. Phoenix
   // already holds the last request; re-sending just re-asserts it if the controller reboots.
+  // Holds never finish - never make a sequence wait on one. Need a finish line? Add it at the
+  // call site: flywheel.spinUp().until(flywheel::isAtTarget). (Full rule in Arm.java.)
 
-  /** Command the flywheel to shooting speed and hold it there until interrupted or superseded. */
+  /** Command the flywheel to shooting speed and hold it there. Never finishes. */
   public Command spinUp() {
-    return runRepeatedly(() -> setVelocity(SHOOTING_SPEED_RPS)).named("spinUp");
+    return runRepeatedly(() -> setVelocity(SHOOTING_SPEED_RPS)).named("spinUp (hold)");
   }
 
-  /** Stop the flywheel. */
+  /** Stop the flywheel and keep it stopped. Never finishes. */
   public Command stop() {
-    return runRepeatedly(motor::stopMotor).named("stop");
+    return runRepeatedly(motor::stopMotor).named("stop (hold)");
   }
 
   /** True when the flywheel is within tolerance of its target speed. */

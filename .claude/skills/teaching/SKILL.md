@@ -101,6 +101,12 @@ It walks through the same mechanisms this template has. Best pages to share:
 - **"Why is there no RobotContainer?"** → This template uses OpModes (like FTC). Each mode is its
   own class. See `ONBOARDING.md` — read it together.
 - **"It won't move in the sim."** → Often zeroed gains or "no vision in sim." Check `run-sim`.
+- **"My auto/sequence is stuck and won't move on."** → Our mechanism commands are **holds** — they
+  keep the motor on target *forever*, so anything that waits for one waits forever. Look at the
+  dashboard/log: if the stuck step is named `(hold)`, that's it. Fix: give that one step a finish
+  line right where you use it — `arm.scoring().until(arm::isAtTarget)` — or, to do a step *while*
+  holding a pose, `Command.race(step, hold)`. Working example: `DriveStowDriveChainedOpMode.java`.
+  The full rule + a "which tool when" table is in `ONBOARDING.md` ("Holds never finish").
 
 ## Turning teacher mode off / on
 

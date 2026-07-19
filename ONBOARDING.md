@@ -34,8 +34,16 @@ drive and vision code is a real step up in difficulty, so it comes last on purpo
 5. **`opmodes/TeleopOpMode.java`** — how controller buttons get wired to those commands.
 6. **`opmodes/AutonomousOpMode.java`** and **`opmodes/UtilityOpMode.java`** — the other two mode
    kinds, both tiny.
-7. **`opmodes/StateMachineTeleop.java`** — an optional second way to organize teleop (named states
-   + transitions instead of hold-a-button).
+7. **`opmodes/DriveStowDriveChainedOpMode.java`** — a multi-mechanism auto by **chaining**
+   (`sequence` + `.until` + `race`). This is as advanced as most routines need to be — see
+   "Holds never finish" below.
+
+**Optional advanced dialects** (working demos, not required learning):
+
+- **`opmodes/DriveStowDriveOpMode.java`** — the same auto written with coroutines
+  (`fork` / `await` / `waitUntil`), for when a hold must span many steps or logic needs loops.
+- **`opmodes/StateMachineTeleop.java`** — teleop as named states + transitions instead of
+  hold-a-button.
 
 **Advanced — don't start here.** This is real, working code, but it layers PID, feedforward, motion
 profiling, coordinate frames, and vision all at once. Come back once the pattern above feels
@@ -43,6 +51,8 @@ comfortable:
 
 - `subsystems/DriveMechanism.java` — the swerve wrapper.
 - `commands/DriveToPose.java`, `commands/DriveToTag.java` — drive to a field pose / to an AprilTag.
+- `subsystems/vision/Limelight.java` — feeds AprilTag pose estimates from the cameras into the
+  drivetrain's pose estimator.
 - `subsystems/CommandSwerveDrivetrain.java`, `generated/TunerConstants.java`,
   `utils/Telemetry.java`, `subsystems/vision/LimelightHelpers.java` — generated or vendored
   infrastructure you rarely edit by hand.
@@ -96,6 +106,43 @@ A `Trigger` (a button binding) is automatically **scoped to wherever you create 
 
 A mechanism with nothing else commanding it automatically holds its **idle** default command
 (set up by `Mechanism`), so you don't need to write an explicit "stop."
+
+## Holds never finish (the #1 "my robot is stuck" trap)
+
+Our mechanism commands — `arm.scoring()`, `flywheel.spinUp()`, `robot.stow()` — are **holds**:
+they keep re-sending their setpoint forever, so the motor stays actively commanded. That's the
+right thing for closed-loop control, but it has one consequence you must know:
+
+> **A hold never finishes, so nothing may ever *wait* on a hold.**
+
+Put a hold inside `Command.sequence(...)` (or `await` it in a coroutine) and the robot parks
+there forever. Every hold is named with **`(hold)`** so you can catch this: if a stuck routine
+is sitting on a `(hold)` command on the dashboard or in the log, that's the bug.
+
+When one step *does* need to finish, give it a finish line **at the call site** — don't go
+add a "...AndWait" version to the subsystem:
+
+```java
+arm.scoring().until(arm::isAtTarget)   // same hold, but finishes when the arm arrives
+```
+
+Which tool for "do things in order" — each one is stuck-proof for its job. **Chaining (the first
+three rows) is as far as most routines ever need to go:**
+
+| Situation | Tool | Why it can't hang |
+| --- | --- | --- |
+| Drivetrain-only auto legs | `Command.sequence` | `DriveToPose` finishes on its own |
+| One step that must finish | `.until(sensor)` on the hold | the finish line is explicit, right there |
+| Do a step *while* holding a pose | `Command.race(step, hold)` | the step finishes → the race cancels the hold |
+| Advanced: a hold spanning many steps, loops, branches | coroutine: `fork` holds, `await` finishers | `fork` never waits; only `await` waits |
+
+See `opmodes/AutonomousOpMode.java` (sequence) and `opmodes/DriveStowDriveChainedOpMode.java`
+(chaining with `.until` + `race`) — those two cover almost everything. The optional advanced
+dialects live in `opmodes/DriveStowDriveOpMode.java` (the same auto with coroutines) and
+`opmodes/StateMachineTeleop.java` (teleop as a state machine).
+
+Tip: `.withTimeout(seconds)` on any `.until(...)` step is the seatbelt — if a mechanism never
+quite reaches its setpoint, the auto moves on instead of burning the whole period stuck.
 
 ## "My OpMode doesn't show up on the driver station!"
 

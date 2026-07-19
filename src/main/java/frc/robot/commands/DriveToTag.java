@@ -34,7 +34,8 @@ import org.wpilib.math.trajectory.TrapezoidProfile;
 public class DriveToTag extends ClassicCommand {
   private final DriveMechanism drivetrain;
 
-  // Which Limelight to read ("limelight" is the default hostname) and which AprilTag to align to.
+  // Which Limelight to read (must match a camera name registered in Robot, e.g. "limelight-br")
+  // and which AprilTag to align to.
   private final String camera;
   private final int targetTagId;
 

@@ -89,8 +89,8 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
 
 ## Simulation gotchas specific to this template
 
-- **No vision in sim.** There's no PhotonVision / Limelight sim, so `DriveToTag` (and the **A** /
-  **Y** teleop bindings, and any AprilTag align) see **no targets** and won't converge in sim.
+- **No vision in sim.** There's no PhotonVision / Limelight sim, so `DriveToTag` (the **A** teleop
+  binding, and any AprilTag align) sees **no targets** and won't converge in sim.
   Exercise vision on real hardware; use `DriveToPose` / autonomous routines for sim testing.
 - **Physics is CTRE Phoenix 6 swsim only** (no maple-sim rigid-body). The 4 ms sim `Notifier` lives
   in [CommandSwerveDrivetrain](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java).

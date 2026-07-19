@@ -14,17 +14,22 @@ import org.wpilib.opmode.Autonomous;
 import org.wpilib.opmode.PeriodicOpMode;
 
 /**
- * A closed-loop autonomous routine written with coroutines ({@code fork} / {@code await}).
+ * A closed-loop autonomous routine written with coroutines ({@code fork} / {@code await}) - the
+ * <b>advanced dialect</b>. Most routines don't need this: see {@link DriveStowDriveChainedOpMode}
+ * for the same auto written by chaining ({@code sequence} + {@code .until} + {@code race}), which
+ * is the style we teach first. Reach for coroutines when a hold must span many steps, or the logic
+ * needs real loops/branches.
  *
- * <p><b>Why coroutines here instead of {@code Command.sequence}?</b> The {@code sequence} and {@code
- * parallel} builders use the older ownership rule: the group owns <i>every</i> mechanism for the
- * whole routine, so a mechanism that isn't being actively driven right now still shows up as "owned"
- * with nothing actually commanding it. That's fine for trivial logic or plain onboard (open-loop)
- * motors, but for closed-loop mechanisms - our Motion Magic arm and flywheel - the rule is: <i>the
- * command that issued a control request should keep running as long as that request is active.</i>
- * You should never fall back to idle while a motor is still holding a setpoint. Coroutines give that
- * finer-grained control. (Compare with {@link AutonomousOpMode}, which uses {@code Command.sequence}
- * for a plain drivetrain-only routine - exactly the trivial case where the builder is fine.)
+ * <p><b>Why coroutines here instead of {@code Command.sequence}?</b> The {@code sequence} and
+ * {@code parallel} builders use the older ownership rule: the group owns <i>every</i> mechanism for
+ * the whole routine, so a mechanism that isn't being actively driven right now still shows up as
+ * "owned" with nothing actually commanding it. That's fine for trivial logic or plain onboard
+ * (open-loop) motors, but for closed-loop mechanisms - our Motion Magic arm and flywheel - the rule
+ * is: <i>the command that issued a control request should keep running as long as that request is
+ * active.</i> You should never fall back to idle while a motor is still holding a setpoint.
+ * Coroutines give that finer-grained control. (Compare with {@link AutonomousOpMode}, which uses
+ * {@code Command.sequence} for a plain drivetrain-only routine - exactly the trivial case where the
+ * builder is fine.)
  *
  * <p><b>The only three verbs you need:</b>
  *

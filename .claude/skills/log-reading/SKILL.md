@@ -64,8 +64,9 @@ The first sample where the control word flips to enabled is the start of the act
 tells you which OpMode it was.
 
 **Vision keys:** the robot does **not** republish Limelight data, but `DataLogManager` logs all NT,
-so if a real Limelight named `limelight` is connected its `/limelight/*` entries are captured. In
-**sim there is no Limelight**, so expect none.
+so if the real Limelights (`limelight-br` / `limelight-bl`) are connected their
+`/limelight-br/*` and `/limelight-bl/*` entries are captured. In **sim there is no Limelight**,
+so expect none.
 
 ## Reading `.wpilog` — AdvantageScope (interactive)
 

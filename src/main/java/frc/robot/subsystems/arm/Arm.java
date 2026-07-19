@@ -80,31 +80,29 @@ public class Arm extends Mechanism {
 
   // The "move and hold" factories use runRepeatedly, which re-sends the Motion Magic request every
   // loop. Phoenix already holds the last request; re-sending just re-asserts it after a reboot.
+  //
+  // THE ONE RULE: a hold never finishes, so nothing may ever WAIT on a hold. A hold inside
+  // Command.sequence (or awaited in a coroutine) sticks there forever. When one step needs to
+  // finish, give it a finish line AT THE CALL SITE instead of adding a second method here:
+  //
+  //   arm.scoring().until(arm::isAtTarget)   // finishes when the arm arrives
+  //
+  // The "(hold)" in each command name shows up on the dashboard and in logs - if a stuck
+  // sequence is sitting on a "(hold)", that's the bug.
 
-  /** Move to the vertical (stowed) position. */
+  /** Move to the vertical (stowed) position and hold it. Never finishes - see the rule above. */
   public Command vertical() {
-    return runRepeatedly(() -> setPosition(VERTICAL_POSITION)).named("vertical");
+    return runRepeatedly(() -> setPosition(VERTICAL_POSITION)).named("vertical (hold)");
   }
 
-  /** Move to the horizontal (ground intake) position. */
+  /** Move to the horizontal (ground intake) position and hold it. Never finishes. */
   public Command horizontal() {
-    return runRepeatedly(() -> setPosition(HORIZONTAL_POSITION)).named("horizontal");
+    return runRepeatedly(() -> setPosition(HORIZONTAL_POSITION)).named("horizontal (hold)");
   }
 
-  /** Move to the scoring position. */
+  /** Move to the scoring position and hold it. Never finishes. */
   public Command scoring() {
-    return runRepeatedly(() -> setPosition(SCORING_POSITION)).named("scoring");
-  }
-
-  /**
-   * Move to the scoring position and finish once the arm is there. Await this in a sequence (e.g.
-   * auto-score). The arm holds its angle after this finishes - the last Motion Magic request stays
-   * applied - until another command moves it.
-   */
-  public Command scoringAndWait() {
-    return runRepeatedly(() -> setPosition(SCORING_POSITION))
-        .until(this::isAtTarget)
-        .named("scoringAndWait");
+    return runRepeatedly(() -> setPosition(SCORING_POSITION)).named("scoring (hold)");
   }
 
   /** True when the arm has reached its target angle. */

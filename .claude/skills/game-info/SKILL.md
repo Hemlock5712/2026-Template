@@ -47,8 +47,11 @@ Respect these as project conventions rather than re-deriving them:
 
 ## AprilTags / vision
 
-- The robot reads AprilTags only through a **Limelight** (NT name `"limelight"`) via
+- The robot reads AprilTags only through **Limelights** (two cameras, NT names `"limelight-br"` /
+  `"limelight-bl"`, registered in `Robot` via `Limelight.registerAll`) using
   [LimelightHelpers](src/main/java/frc/robot/subsystems/vision/LimelightHelpers.java).
+  [Limelight.java](src/main/java/frc/robot/subsystems/vision/Limelight.java) fuses their AprilTag
+  pose estimates into the drivetrain's pose estimator.
   [DriveToTag](src/main/java/frc/robot/commands/DriveToTag.java) works in the **tag's frame**
   (`getBotPose3d_TargetSpace`) and drives to the Limelight's configured POI standoff — so it is
   **alliance-agnostic** (it doesn't care about field origin at all).

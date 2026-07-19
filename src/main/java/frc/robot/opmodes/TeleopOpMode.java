@@ -30,9 +30,10 @@ import org.wpilib.opmode.Teleop;
  */
 @Teleop(name = "Teleop")
 public class TeleopOpMode extends PeriodicOpMode {
-  // Which Limelight to align with, and the AprilTag to align to. TODO: pick the real scoring tag
-  // (and flip per alliance) once the game is wired - see the game-info conventions.
-  private static final String ALIGN_CAMERA = "limelight";
+  // Which Limelight to align with, and the AprilTag to align to. Must be one of the camera names
+  // registered in Robot's Limelight.registerAll(...). TODO: pick the camera that faces the scoring
+  // tag, and the real tag ID (flipped per alliance) once the game is wired - see game-info.
+  private static final String ALIGN_CAMERA = "limelight-br";
   private static final int ALIGN_TAG_ID = 1;
 
   private final double maxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // top speed

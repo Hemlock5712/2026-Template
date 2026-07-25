@@ -18,7 +18,7 @@ import org.wpilib.opmode.PeriodicOpMode;
  * on the driver station, and only the selected one is constructed. This example drives two {@link
  * DriveToPose} legs in sequence - swap in your real field poses.
  */
-@Autonomous(name = "Drive To Pose")
+@Autonomous(name = "2 - Drive To Pose")
 public class AutonomousOpMode extends PeriodicOpMode {
   private final Command routine;
 

@@ -5,6 +5,8 @@ description: Run this robot in simulation — both the normal GUI sim and a head
 
 # Running the robot in simulation
 
+> File links below are relative to the **repo root**, not to this skill's directory.
+
 This template runs in WPILib desktop simulation with CTRE's Phoenix 6 swerve plant sim. There are
 two ways to launch it.
 
@@ -33,18 +35,24 @@ robot in the mode you ask for, so it actually starts playing instead of sitting 
 ./gradlew simulateJavaAgent -Pmode=utility
 
 # Pick a SPECIFIC OpMode by name: "<mode>:<@Autonomous/@Teleop/@Utility name>".
-./gradlew simulateJavaAgent '-Pmode=auto:Drive To Pose'
+./gradlew simulateJavaAgent '-Pmode=auto:2 - Drive To Pose'
 ```
 
 You can also apply the headless behavior to the base task: `./gradlew simulateJava -Pheadless -Pmode=auto`.
 `simulateJavaAgent` just makes headless + `mode=auto` the default.
 
+**Each mode has a named default OpMode** (the constants at the top of
+[SimStartup.java](src/main/java/frc/robot/utils/SimStartup.java)) — deliberately named rather than
+"whichever the class scan finds first", because discovery order silently changes the moment anyone
+adds an OpMode. If a default name no longer matches, the run warns, lists the available names, and
+falls back rather than sitting silently disabled.
+
 | Property | Effect |
 | --- | --- |
 | `-Pheadless` | Skip the sim GUI and socket Driver Station. Implied by `simulateJavaAgent`. |
-| `-Pmode=auto` | Auto-enable in AUTONOMOUS (default for `simulateJavaAgent`). |
-| `-Pmode=teleop` | Auto-enable in TELEOPERATED. |
-| `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). |
+| `-Pmode=auto` | Auto-enable in AUTONOMOUS (default for `simulateJavaAgent`). Runs **"3 - Drive Stow Drive"** — it exercises the drivetrain *and* the arm, so it's the useful regression test. |
+| `-Pmode=teleop` | Auto-enable in TELEOPERATED. Runs **"Teleop"**. |
+| `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). Runs **"Stow"** — arm only, no drivetrain, so it's the clean way to isolate mechanism behavior. |
 | `-Pmode=<mode>:<name>` | Pick the OpMode of `<mode>` whose annotation `name` matches `<name>`. |
 | (omitted / `-Pmode=disabled`) | Stay disabled. |
 
@@ -68,8 +76,8 @@ In the console output you should see, in order:
 
 ```
 ********** Robot program startup complete **********
-[SimStartup] Headless start: enabled=true mode=AUTONOMOUS opmode="Drive To Pose"
-********** Starting OpMode Drive To Pose **********
+[SimStartup] Headless start: enabled=true mode=AUTONOMOUS opmode="3 - Drive Stow Drive"
+********** Starting OpMode 3 - Drive Stow Drive **********
 ```
 
 If `[SimStartup]` is missing, the task wasn't `simulateJavaAgent` and you didn't pass `-Pmode`. If
@@ -94,14 +102,25 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
   Exercise vision on real hardware; use `DriveToPose` / autonomous routines for sim testing.
 - **Physics is CTRE Phoenix 6 swsim only** (no maple-sim rigid-body). The 4 ms sim `Notifier` lives
   in [CommandSwerveDrivetrain](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java).
+  The arm and flywheel have their own WPILib plants (see the "Simulation only" block at the bottom
+  of each subsystem), ticked from `Scheduler.addPeriodic` at 50 Hz.
+- **Sim cannot test motor *feedback configuration*.** The arm's plant writes the CANcoder position
+  directly (`encoderSim.setRawPosition(...)`) and the closed loop reads that same sensor, so
+  anything about how rotor and sensor relate — `RotorToSensorRatio`, `SensorToMechanismRatio`,
+  fused vs. plain remote, CANcoder magnet offset, sensor inversion — **never enters the control
+  path a sim run exercises.** A green sim proves the control logic, not the device config. Verify
+  that class of change on hardware.
+- **The arm plant updates at 50 Hz, faster than a real CANcoder is read.** Damping (`kD`) that is
+  stable in sim can behave differently on hardware, and vice versa. Treat sim gains as a starting
+  point.
 - **"CAN message is stale" spam at startup** is normal in sim while signals spin up — ignore it.
 - **No log-replay.** AdvantageKit here is logging-only (no IO layer); there is no `-Preplay`. You
   re-run the sim to test a change, then compare logs.
 - **Gradle needs a Java 25 JDK.** If you see `invalid source release: 25`, point Gradle at the
   WPILib 2027 toolchain JDK (`-Dorg.gradle.java.home=...` or `org.gradle.java.home` in
   `gradle.properties`). Building from the WPILib VS Code extension handles this for you.
-- **Default gains are zero.** Arm/Flywheel gains are placeholders; mechanisms won't move
-  realistically until tuned (see `robot-description`).
+- **Gains are sim-tuned, not robot-tuned.** Arm/Flywheel gains are real values that work against
+  the sim plants, so mechanisms do move — but re-tune them on hardware (see `robot-description`).
 
 ## When NOT to use headless
 

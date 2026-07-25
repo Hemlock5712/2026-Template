@@ -14,24 +14,18 @@ import org.wpilib.opmode.Autonomous;
 import org.wpilib.opmode.PeriodicOpMode;
 
 /**
- * The same routine as {@link DriveStowDriveChainedOpMode}, written with coroutines ({@code fork} /
- * {@code await}) - the <b>advanced dialect</b>. Learn chaining first; reach for coroutines when a
- * hold must span many steps or the logic needs real loops/branches.
+ * Drive, stow the arm, drive again - a multi-mechanism auto built by <b>chaining</b>. As far as
+ * most autos ever need to go.
  *
- * <p>Why not {@code Command.sequence}? A sequence owns every mechanism for the whole routine, even
- * between the steps that command it. Coroutines keep closed-loop mechanisms (our arm and flywheel)
- * actively commanded the whole time.
- *
- * <p>The three verbs:
+ * <p>The one rule: <b>a hold never finishes, so never wait on a hold.</b> Two tools work around it:
  *
  * <ul>
- *   <li>{@code coroutine.await(command)} - run a command and wait for it to finish.
- *   <li>{@code coroutine.fork(command)} - start a command and keep going; it runs in the background
- *       and is auto-canceled when this routine ends.
- *   <li>{@code coroutine.waitUntil(condition)} - pause until the condition is true.
+ *   <li>{@code hold.until(condition)} - gives a hold a finish line.
+ *   <li>{@code Command.race(step, hold)} - do a step WHILE holding. The step always decides when
+ *       the race ends, because the hold never finishes.
  * </ul>
  */
-@Autonomous(name = "Drive Stow Drive")
+@Autonomous(name = "3 - Drive Stow Drive")
 public class DriveStowDriveOpMode extends PeriodicOpMode {
   private final Command routine;
 
@@ -41,19 +35,16 @@ public class DriveStowDriveOpMode extends PeriodicOpMode {
     final Pose2d pose2 = new Pose2d(2.0, 1.5, Rotation2d.fromDegrees(90)); // then 1.5 m left
 
     routine =
-        Command.noRequirements(
-                coroutine -> {
-                  // Drive to the first pose and wait until we're there.
-                  coroutine.await(new DriveToPose(robot.drivetrain, pose1));
+        Command.sequence(
+                // Leg 1: DriveToPose finishes on its own, so it can sit in a sequence as-is.
+                new DriveToPose(robot.drivetrain, pose1),
 
-                  // fork: start holding the stow pose and keep going. The hold stays commanded
-                  // through the next drive and is auto-canceled when the routine ends.
-                  coroutine.fork(robot.stow());
-                  coroutine.waitUntil(robot.arm::isAtTarget); // move on once actually stowed
+                // Stow is a hold - .until(...) gives it a finish line at the stow angle.
+                robot.stow().until(robot.arm::isAtTarget).named("stow until stowed"),
 
-                  // Drive to the second pose while the stow pose is still held.
-                  coroutine.await(new DriveToPose(robot.drivetrain, pose2));
-                })
+                // Leg 2 WHILE holding stow: the drive finishes, the race cancels the hold.
+                Command.race(new DriveToPose(robot.drivetrain, pose2), robot.stow())
+                    .named("drive holding stow"))
             .named("Drive Stow Drive");
   }
 

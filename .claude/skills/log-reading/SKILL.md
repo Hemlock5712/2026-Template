@@ -5,6 +5,8 @@ description: How to find and analyze this robot's logs — AdvantageKit .wpilog 
 
 # Log Reading
 
+> File links below are relative to the **repo root**, not to this skill's directory.
+
 This template logs with **AdvantageKit, logging-only** — no IO layers and no log-replay. Two kinds
 of logs get written:
 
@@ -23,7 +25,7 @@ at the **50 Hz loop rate** — AdvantageKit keeps one value per key per loop —
 | Source | Path |
 | --- | --- |
 | Sim `.wpilog` | [logs/](logs/) in the project dir — `akit_<random>.wpilog`, renamed to `akit_<yy-MM-dd_HH-mm-ss>.wpilog` once the time is known. Newest is most recent. |
-| Sim `.hoot` | [logs/example.hoot](logs/) (path from `TunerConstants`). |
+| Sim `.hoot` | **None is produced.** The path in `TunerConstants` only takes effect with real Phoenix hardware on the bus — a sim run leaves `logs/` with `.wpilog` files only. Don't go looking for applied volts / stator current in sim; they aren't recorded anywhere. |
 | Real robot `.wpilog` | USB drive `/U/logs` (the `WPILOGWriter` default; pass a path to change it). |
 | Real robot `.hoot` | Wherever the `CANBus` log path points; pull via Tuner X. |
 
@@ -48,7 +50,12 @@ Outputs land under a **`/RealOutputs/` prefix**:
 | `/RealOutputs/Drivetrain/RotationSpeedRadPerSec` | `double` | Yaw rate magnitude |
 | `/RealOutputs/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples |
 | `/RealOutputs/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
-| `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state |
+| `/RealOutputs/Arm/AngleDegrees` | `double` | Measured arm angle. **0° = straight out horizontally** (the `Arm_Cosine` frame), so the presets read: scoring ≈ 30°, **stow = 90°**, intake = 180°. Stow is not 0. |
+| `/RealOutputs/Arm/TargetDegrees` | `double` | Angle the arm is driving toward — graph against `AngleDegrees` |
+| `/RealOutputs/Arm/AtTarget` | `boolean` | `Arm.isAtTarget()`; what the stow autos wait on |
+| `/RealOutputs/Flywheel/SpeedRps` | `double` | Measured wheel speed, rotations/sec (target is 25) |
+| `/RealOutputs/Flywheel/AtTarget` | `boolean` | `Flywheel.isAtTarget()` |
+| `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state. **Only written by the "State Machine (no driving)" teleop** — it never appears in an autonomous log. |
 
 Also present, logged by AdvantageKit itself (all verified in a real sim log):
 

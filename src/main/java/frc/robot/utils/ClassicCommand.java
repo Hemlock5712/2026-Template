@@ -14,25 +14,7 @@ import org.wpilib.command3.Mechanism;
  * The classic v2 command style ({@code initialize/execute/isFinished/end}) on top of Commands v3.
  * Extend it and override what you need; the instance is a {@link Command}.
  *
- * <p>Example:
- *
- * <pre>{@code
- * public class DriveDistance extends ClassicCommand {
- *   private final Drive drive;
- *   private final double meters;
- *
- *   public DriveDistance(Drive drive, double meters) {
- *     super("DriveDistance", drive); // name + requirements, like v2 addRequirements(drive)
- *     this.drive = drive;
- *     this.meters = meters;
- *   }
- *
- *   @Override protected void initialize()       { drive.resetEncoders(); }
- *   @Override protected void execute()          { drive.arcade(0.5, 0); }
- *   @Override protected boolean isFinished()    { return drive.distance() >= meters; }
- *   @Override protected void end(boolean intr)  { drive.stop(); }
- * }
- * }</pre>
+ * <p>{@link frc.robot.commands.DriveDistance} is a worked example.
  */
 public abstract class ClassicCommand implements Command {
   private final String name;

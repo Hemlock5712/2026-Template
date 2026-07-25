@@ -10,10 +10,27 @@ code and explanations over cleverness.
   structure. The big surprise: **there is no `RobotContainer`** (this template uses OpModes).
 - **Skills** (in `.claude/skills/`) hold the deep knowledge — consult the matching one:
   - `robot-description` — the code map: OpModes, subsystems, commands, where everything lives.
+  - `add-a-mechanism` — step-by-step: adding a new subsystem or OpMode. The most common task.
   - `game-info` — field frame, alliance flipping, AprilTag/vision conventions.
   - `run-sim` — running the robot in simulation (GUI and headless agent mode).
+  - `build-and-deploy` — compiling from the CLI and putting code on the robot.
   - `log-reading` — finding and reading `.wpilog` / `.hoot` logs after a run.
   - `teaching` — **teacher mode** (see below).
+
+## Code style: comments say WHAT, the website says WHY
+
+The lessons live at **frc5712.com**. Code comments must not re-teach them. A comment says what the
+code does and flags anything genuinely surprising — a trap, a unit, a constraint. It does not
+explain the concept.
+
+- One or two lines per comment. No measurement tables, no rhetorical questions, no multi-paragraph
+  rationale. TODOs are one line.
+- Keep warnings, cut explanations. "ORDER MATTERS: these run in registration order" stays;
+  a paragraph on why coroutines are useful goes on the website.
+- Don't create a named constant just to hold a config value used once — put the number directly in
+  the config or constructor call with a short trailing comment.
+
+Run `/simplify-comments` to sweep the codebase against this rule.
 
 ## Teacher mode — ON by default
 

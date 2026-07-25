@@ -48,22 +48,20 @@ public class TeleopOpMode extends PeriodicOpMode {
         drivetrain.applyRequest(
             () ->
                 drive
-                    .withVelocityX(-driver.getLeftY() * maxSpeed) // forward with negative Y
-                    .withVelocityY(-driver.getLeftX() * maxSpeed) // left with negative X
-                    .withRotationalRate(-driver.getRightX() * maxAngularRate))); // CCW with -X
-
-    // Left bumper: reset which way is "forward".
-    driver.leftBumper().onTrue(drivetrain.seedFieldCentric());
+                    .withVelocityX(-driver.getLeftY() * maxSpeed)
+                    .withVelocityY(-driver.getLeftX() * maxSpeed)
+                    .withRotationalRate(-driver.getRightX() * maxAngularRate)));
 
     // Superstructure presets (arm + flywheel move together), held while the button is down.
-    driver.leftTrigger().whileTrue(robot.intake()); // pick up game piece
-    driver.rightBumper().whileTrue(robot.score()); // prepare to score
-    driver.rightTrigger().whileTrue(robot.stow()); // back to safe travel pose
+    driver.leftTrigger().whileTrue(robot.intake());
+    driver.rightBumper().whileTrue(robot.score());
+    driver.rightTrigger().whileTrue(robot.stow());
 
     // Hold A: vision-only auto-align to the tag standoff.
     driver.a().whileTrue(new DriveToTag(drivetrain, robot.limelightBR, ALIGN_TAG_ID));
 
-    // Hold Y: auto-score prep.
-    driver.y().whileTrue(robot.autoScore()).whileFalse(robot.flywheel.stop());
+    // Hold Y: auto-score prep. Letting go stops the flywheel via its default command, so no
+    // "stop" binding is needed here.
+    driver.y().whileTrue(robot.autoScore());
   }
 }

@@ -9,6 +9,7 @@ import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.ctre.phoenix6.swerve.utility.LinearPath;
 import frc.robot.subsystems.DriveMechanism;
+import frc.robot.utils.AllianceFlip;
 import frc.robot.utils.ClassicCommand;
 import org.wpilib.math.controller.PIDController;
 import org.wpilib.math.geometry.Pose2d;
@@ -17,8 +18,8 @@ import org.wpilib.math.trajectory.TrapezoidProfile;
 
 /**
  * Drive in a straight line to a field pose using odometry - the odometry twin of {@link DriveToTag}
- * (which is vision-only). Each loop samples a straight-line profile: the profile's velocity is the
- * feedforward that moves the robot, and X/Y/heading PID trims drift back onto the line.
+ * (which is vision-only). A straight-line profile supplies the velocity; X/Y/heading PID trims
+ * drift back onto the line.
  *
  * <p>Classic-style Commands v3 command on {@link ClassicCommand}, like {@link DriveToTag}.
  */
@@ -33,8 +34,7 @@ public class DriveToPose extends ClassicCommand {
           new TrapezoidProfile.Constraints(2.5, 3.0),
           new TrapezoidProfile.Constraints(Math.PI, 2.0 * Math.PI));
 
-  // Trims drift back onto the profile (the feedforward does the real work). Raise kP if the robot
-  // lags or stops short; lower it if it oscillates. TODO: tune.
+  // Trims drift back onto the profile; the feedforward does the real work. TODO: tune.
   private final PIDController xController = new PIDController(3.0, 0.0, 0.0);
   private final PIDController yController = new PIDController(3.0, 0.0, 0.0);
   private final PIDController headingController = new PIDController(4.0, 0.0, 0.0);
@@ -48,12 +48,15 @@ public class DriveToPose extends ClassicCommand {
 
   // Captured once at start: the pose + velocity the trajectory is generated from.
   private LinearPath.State startState = new LinearPath.State();
-  // Trajectory time t = now - startTime.
   private double startTime;
+  // The blue goal above, flipped if we're on red. Resolved in initialize() because the alliance
+  // isn't known yet when the OpMode is constructed.
+  private Pose2d activeGoal;
 
   /**
    * @param drivetrain the swerve drive to command
-   * @param goal the field pose (blue-origin) to drive to, including the goal heading
+   * @param goal the field pose to drive to, including the goal heading. <b>Always write this for
+   *     the blue alliance</b> - on red it is flipped for you, see {@link AllianceFlip}.
    */
   public DriveToPose(DriveMechanism drivetrain, Pose2d goal) {
     super("DriveToPose", drivetrain); // name + requirement, like v2 addRequirements(drivetrain)
@@ -62,9 +65,10 @@ public class DriveToPose extends ClassicCommand {
     headingController.enableContinuousInput(-Math.PI, Math.PI);
   }
 
-  /** Captures the start state and starts the clock. */
+  /** Picks the goal for our alliance, captures the start state, and starts the clock. */
   @Override
   protected void initialize() {
+    activeGoal = AllianceFlip.apply(goal);
     startState = new LinearPath.State(drivetrain.getPose(), drivetrain.getFieldVelocity());
     startTime = Utils.getCurrentTimeSeconds();
     xController.reset();
@@ -74,9 +78,8 @@ public class DriveToPose extends ClassicCommand {
 
   @Override
   protected void execute() {
-    // Sample the profile at the elapsed time since start.
     double t = Utils.getCurrentTimeSeconds() - startTime;
-    LinearPath.State setpoint = path.calculate(t, startState, goal);
+    LinearPath.State setpoint = path.calculate(t, startState, activeGoal);
 
     Pose2d measuredPose = drivetrain.getPose();
 

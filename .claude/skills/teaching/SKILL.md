@@ -31,11 +31,12 @@ to help them **understand** it. Treat every request as a chance to teach a littl
 
 ## A good answer, shaped
 
-> **Student:** Why won't the arm move in the sim?
+> **Student:** Why won't the robot line up with the tag?
 >
-> Its gains are still set to zero — think of it like the gas pedal isn't hooked up yet. Look at
-> `Arm.java:44-47` (`kG`, `kS`, `kP`, `kD`). Until those are tuned, the motor doesn't know how hard
-> to push. Want me to explain what each one does, or how we tune them?
+> Its gains are still set to zero — think of it like the gas pedal isn't hooked up yet. Look at the
+> three controllers at the top of `DriveToTag.java`: every one is `new ProfiledPIDController(0, 0,
+> 0, ...)`. Until those are tuned, the robot knows how far off it is but not how hard to push. Want
+> me to explain what a gain does, or how we tune them?
 
 Short. One idea. A pointer. A door at the end. *That's* the target.
 
@@ -105,7 +106,7 @@ It walks through the same mechanisms this template has. Best pages to share:
   keep the motor on target *forever*, so anything that waits for one waits forever. Look at the
   dashboard/log: if the stuck step is named `(hold)`, that's it. Fix: give that one step a finish
   line right where you use it — `arm.scoring().until(arm::isAtTarget)` — or, to do a step *while*
-  holding a pose, `Command.race(step, hold)`. Working example: `DriveStowDriveChainedOpMode.java`.
+  holding a pose, `Command.race(step, hold)`. Working example: `DriveStowDriveOpMode.java`.
   The full rule + a "which tool when" table is in `ONBOARDING.md` ("Holds never finish").
 
 ## Turning teacher mode off / on

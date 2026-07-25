@@ -1,9 +1,11 @@
 ---
 name: game-info
-description: Season/field conventions this codebase enforces — the blue-origin field frame, how alliance flipping works (CTRE operator perspective), AprilTag/vision conventions, and the alliance-aware bits an agent must respect rather than re-derive. Read whenever a task involves field positions, alliance color, or game-piece scoring. Field-zone and game-piece specifics are TODO until a real game is wired.
+description: Season/field conventions this codebase enforces — the blue-origin field frame, automatic red-alliance pose flipping (AllianceFlip), the CTRE operator perspective, and AprilTag/target-space conventions. Use whenever a task involves field positions, Pose2d goals, alliance color, red-vs-blue autos, AprilTag IDs, or where the field origin is.
 ---
 
 # Game Info
+
+> File links below are relative to the **repo root**, not to this skill's directory.
 
 What an agent needs to reason about robot behavior *in match context*: the field coordinate frame,
 how alliance color changes things, and where game-specific constants will live. Anything purely
@@ -16,7 +18,9 @@ point, not a game-specific robot**: the [Arm](src/main/java/frc/robot/subsystems
 [Flywheel](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java), and superstructure
 [poses](src/main/java/frc/robot/Robot.java) (`stow`/`intake`/`score`) are
 **illustrative examples** of intake-and-shoot mechanics, not the real season's mechanisms. There are
-**no field-dimension constants, no scoring-zone poses, and no `AprilTagFieldLayout` wired in yet.**
+**no scoring-zone poses yet.** Field dimensions come from the `AprilTagFieldLayout` loaded in
+[AllianceFlip](src/main/java/frc/robot/utils/AllianceFlip.java), currently the **2026** field
+(`AprilTagFields.kDefaultField`) because WPILib has not shipped a 2027 layout.
 
 When you implement the real game, fill in the TODO sections below and update this skill.
 
@@ -38,12 +42,16 @@ Respect these as project conventions rather than re-deriving them:
 - **Read alliance via `MatchState`, not `DriverStation` on the hot path.** The perspective code uses
   `org.wpilib.driverstation.MatchState.getAlliance()`. Follow that pattern; don't scatter alliance
   reads through subsystem code.
-- **There is no automatic pose flipping for red-alliance autos yet.** `DriveToPose` drives to the
-  literal blue-origin pose you give it. A red-side autonomous that should mirror its blue counterpart
-  needs you to flip the goal poses yourself (rotate about field center: `x → fieldLength - x`,
-  `y → fieldWidth - y`, `θ → θ + 180°`, the **ROTATE** symmetry recent fields use). The field
-  dimensions to do that aren't in code yet — pull them from the game manual / `AprilTagFieldLayout`
-  when you add them. **Don't copy MIRROR-symmetry flip code from older (2024/2025) projects.**
+- **Pose flipping is automatic — author every pose blue-origin.**
+  [AllianceFlip](src/main/java/frc/robot/utils/AllianceFlip.java) does the **ROTATE** symmetry recent
+  fields use (`x → fieldLength - x`, `y → fieldWidth - y`, `θ → θ + 180°`), reading alliance via
+  `MatchState.getAlliance()` and treating an unknown alliance as blue. Field dimensions come from
+  `AprilTagFieldLayout.loadField(AprilTagFields.kDefaultField)`, so they track the season instead of
+  being hardcoded — **`kDefaultField` is still the 2026 field; swap it when WPILib ships 2027.**
+  [DriveToPose](src/main/java/frc/robot/commands/DriveToPose.java) calls `AllianceFlip.apply` in
+  `initialize()` (not in the constructor — the alliance isn't known when an OpMode is built), so
+  passing it a blue pose is all a routine ever needs to do. **Don't copy MIRROR-symmetry flip code
+  from older (2024/2025) projects.**
 
 ## AprilTags / vision
 
@@ -94,8 +102,8 @@ Respect these as project conventions rather than re-deriving them:
 
 ## Anti-patterns
 
-- Don't hardcode red-alliance poses. Author blue-origin; flip about field center when red autos are
-  added.
+- Don't hardcode red-alliance poses, and don't flip by hand. Author blue-origin and let
+  `AllianceFlip` / `DriveToPose` handle red.
 - Don't move the field origin with alliance — only the *driver perspective* flips.
 - Don't read `DriverStation.getAlliance()` directly in subsystem `periodic`/hot paths — go through
   `MatchState` like `CommandSwerveDrivetrain` does.

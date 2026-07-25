@@ -1,14 +1,18 @@
 ---
 name: robot-description
-description: High-level map of this FRC robot template — the OpMode/Commands-v3 wiring, the subsystems and commands, where each piece lives in the source tree, and the hardware/tooling stack (WPILib 2027 alpha, CTRE swerve, SystemCore). Read this before reasoning about any controller / autonomous / subsystem change.
+description: High-level map of this FRC robot template — the OpMode/Commands-v3 wiring, the subsystems and commands, where each piece lives in the source tree, and the hardware/tooling stack (WPILib 2027 alpha, CTRE swerve, AdvantageKit, SystemCore). Use when asked where something lives, how the robot is wired, "where is RobotContainer" (there isn't one — this template uses OpModes), how OpModes are discovered, or before reasoning about any controller / autonomous / subsystem change.
 ---
 
 # Robot Description
 
 This is a Java FRC robot **template** on the **WPILib 2027 alpha** stack (`org.wpilib.*`
 packages, GradleRIO `2027.0.0-alpha-6`, Java **25**). It is the 2026→2027 migration target:
-**Commands v3 + the OpMode framework**, CTRE Phoenix 6 swerve, and **logging-only** telemetry
-(WPILib `DataLogManager` — there is *no* AdvantageKit and no log-replay in this project).
+**Commands v3 + the OpMode framework**, CTRE Phoenix 6 swerve, and **AdvantageKit logging-only**
+telemetry (`WPILOGWriter` + `NT4Publisher`, wired in
+[Robot.java](src/main/java/frc/robot/Robot.java) — no IO layer and
+**no log-replay**). `DataLogManager` is *not* used.
+
+> All file links below are relative to the **repo root**, not to this skill's directory.
 
 Entry point: [Main.java](src/main/java/frc/robot/Main.java) → [Robot.java](src/main/java/frc/robot/Robot.java).
 Read [ONBOARDING.md](ONBOARDING.md) first if you haven't — it explains the single biggest
@@ -27,7 +31,7 @@ fields) and runs the Commands-v3 scheduler in `robotPeriodic()`. That's it. Ther
 
 Each **mode** — a driving experience, an autonomous routine, a calibration task — is its **own
 class** in [opmodes/](src/main/java/frc/robot/opmodes/), annotated `@Teleop`, `@Autonomous`, or
-`@Utility`. The framework ([OpModeRobot](https://github.com/wpilibsuite)) scans `frc.robot` and
+`@Utility`. The framework (`org.wpilib.framework.OpModeRobot`) scans `frc.robot` and
 subpackages at runtime, registers every annotated class with the driver station, and the DS lists
 them by name. Selecting one **constructs** it (that's when its button bindings / routine are built);
 switching away **tears it down** (its bindings are scoped to it and removed automatically).
@@ -56,10 +60,10 @@ constructor taking `(Robot robot)` (or no args). Selecting a mode prints
 | File | Annotation | What it does |
 | --- | --- | --- |
 | [TeleopOpMode.java](src/main/java/frc/robot/opmodes/TeleopOpMode.java) | `@Teleop("Teleop")` | Driver experience. Xbox controller on port 0; field-centric swerve as the drivetrain default command. **LB** = reset field-centric heading; **LT** = `intake()`, **RB** = `score()`, **RT** = `stow()` (superstructure presets, `whileTrue`); **A** = `DriveToTag` align (camera `robot.limelightBR`); **Y** = `autoScore()` (arm to scoring pose + flywheel spin-up; releasing **Y** stops the flywheel). |
-| [StateMachineTeleop.java](src/main/java/frc/robot/opmodes/StateMachineTeleop.java) | `@Teleop("StateMachine Demo")` | **Optional advanced dialect.** The superstructure as a Commands-v3 `StateMachine`: named states (stowed/pickup/prep/scoring), `when(...)` / `whenComplete()` transitions, enter/exit hooks. No drive controls — a superstructure showcase. |
-| [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java) | `@Autonomous("Drive To Pose")` | Example routine: sequences two `DriveToPose` legs with `Command.sequence(...).named(...)`. The sequential group inherits its children's requirement (the drivetrain), and the scheduler hands the drivetrain off between legs. `start()` schedules the routine; `end()` cancels it. |
-| [DriveStowDriveChainedOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveChainedOpMode.java) | `@Autonomous("Drive Stow Drive (Chained)")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(isAtTarget)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
-| [DriveStowDriveOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveOpMode.java) | `@Autonomous("Drive Stow Drive")` | **Optional advanced dialect.** The same auto with coroutines — `await` (drive legs), `fork` (hold the stow pose through the second leg), `waitUntil` (arm at target). For holds spanning many steps or logic with loops/branches. |
+| [StateMachineTeleop.java](src/main/java/frc/robot/opmodes/StateMachineTeleop.java) | `@Teleop("State Machine (no driving)")` | The superstructure as a Commands-v3 `StateMachine`: named states (stowed/pickup/prep/scoring), `when(...)` / `whenComplete()` transitions, enter/exit hooks. No drive controls — a superstructure showcase. |
+| [DriveDistanceOpMode.java](src/main/java/frc/robot/opmodes/DriveDistanceOpMode.java) | `@Autonomous("1 - Drive 2 Meters")` | The simplest auto and the first closed loop: one [DriveDistance](src/main/java/frc/robot/commands/DriveDistance.java) with a `.withTimeout(...)` seatbelt. No field frame, no alliance, no profile. |
+| [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java) | `@Autonomous("2 - Drive To Pose")` | Sequences two `DriveToPose` legs with `Command.sequence(...).named(...)`. The sequential group inherits its children's requirement (the drivetrain), and the scheduler hands the drivetrain off between legs. `start()` schedules the routine; `end()` cancels it. |
+| [DriveStowDriveOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveOpMode.java) | `@Autonomous("3 - Drive Stow Drive")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(isAtTarget)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
 | [UtilityOpMode.java](src/main/java/frc/robot/opmodes/UtilityOpMode.java) | `@Utility("Stow")` | Safe off-field pose (arm vertical, flywheel stopped). `@Utility` is the renamed 2027 "Test" mode. |
 
 Add a routine = add another annotated class. `start()` schedules the command, `end()` cancels it.
@@ -84,8 +88,11 @@ and the "which composition tool when" table live in `ONBOARDING.md` § "Holds ne
   alliance perspective (blue 0°, red 180°). It is **not** a `Mechanism` (already a class).
 - [DriveMechanism.java](src/main/java/frc/robot/subsystems/DriveMechanism.java) — the Commands-v3
   `Mechanism` wrapper that *owns* a `CommandSwerveDrivetrain`. Exposes `applyRequest(Supplier<SwerveRequest>)`,
-  `seedFieldCentric()`, `setControl(SwerveRequest)`, and read getters `getPose()` /
-  `getFieldVelocity()` (both **blue-alliance-origin**, the Phoenix convention). Registers
+  `setControl(SwerveRequest)`, `addVisionMeasurement(...)`, and read getters `getPose()` /
+  `getFieldVelocity()` (both **blue-alliance-origin**, the Phoenix convention). There is
+  deliberately **no `seedFieldCentric()`** — re-zeroing the heading rewrites the pose estimator's
+  rotation, which is the same heading MegaTag2 solves against, so one press silently corrupts every
+  later vision fix. Registers
   `applyOperatorPerspective` on the scheduler and registers [Telemetry](src/main/java/frc/robot/utils/Telemetry.java)
   with the drivetrain. This is the **logging surface** — see the `log-reading` skill.
 
@@ -96,10 +103,13 @@ The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `Appl
 
 - [arm/Arm.java](src/main/java/frc/robot/subsystems/arm/Arm.java) — single `TalonFX` (CAN 31) +
   `CANcoder` (CAN 32), `MotionMagicVoltage` position control with `Arm_Cosine` gravity FF. Presets:
-  `vertical()` (stow), `horizontal()` (intake), `scoring()`. **All gains are zeroed and marked
-  "NEEDS TUNING"** — this is a template.
+  `vertical()` (stow), `horizontal()` (intake), `scoring()`. Gains are **tuned against the sim
+  plant, not a real arm** — re-tune on hardware. Has a `SingleJointedArmSim` model and logs
+  `Arm/AngleDegrees`, `Arm/TargetDegrees`, `Arm/AtTarget`.
 - [flywheel/Flywheel.java](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java) — single
-  `TalonFX` (CAN 21), `MotionMagicVelocityVoltage`, shooting speed 25 RPS. `spinUp()` / `stop()`.
+  `TalonFX` (CAN 21), `MotionMagicVelocityVoltage`, shooting speed 25 RPS. `spinUp()` / `stop()`,
+  with `stop()` as its **default command** (a TalonFX otherwise holds its last command forever).
+  Has a `FlywheelSim` model; logs `Flywheel/SpeedRps`, `Flywheel/AtTarget`.
 - **Superstructure poses** — the arm + flywheel coordinator. These are plain methods at the bottom
   of [Robot.java](src/main/java/frc/robot/Robot.java) (NOT a separate class or `Mechanism`): each
   composes arm + flywheel into one command per robot pose — `stow()`, `intake()`, `score()`,
@@ -138,7 +148,7 @@ Two authoring styles coexist; pick whichever reads better. Both are Commands v3.
 | --- | --- | --- |
 | [DriveToPose.java](src/main/java/frc/robot/commands/DriveToPose.java) | classic | Straight-line drive to a blue-origin `Pose2d` on **odometry**, via CTRE `LinearPath` (trapezoid profile feedforward) + per-axis PID feedback. The building block for autonomous. |
 | [DriveToTag.java](src/main/java/frc/robot/commands/DriveToTag.java) | classic | **Vision-only** align to an AprilTag using LimelightLib's `FiducialTarget.getRobotPose_TargetSpace()`; three `ProfiledPIDController`s drive the tag-frame offset to the Limelight's POI standoff (2027 tag frame: +X out of the tag face, +Y tag-left — facing the tag is yaw ±π). |
-| [DriveToTagInline.java](src/main/java/frc/robot/commands/DriveToTagInline.java) | inline | The same behavior as `DriveToTag`, written inline, kept as a reference example of the inline style. Not used by any OpMode. |
+| [DriveDistance.java](src/main/java/frc/robot/commands/DriveDistance.java) | classic | Drive forward a signed distance with one P controller, measured from the start pose. No profile, no field frame — the teaching rung below `DriveToPose`. |
 
 ## Hardware constants — [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java)
 
@@ -177,9 +187,10 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 - **Java 25** source/target. Gradle must run on a Java 25 JDK (e.g. the WPILib 2027 toolchain JDK);
   an older JVM fails with `invalid source release: 25`.
 - Vendordeps: [Phoenix6](vendordeps/Phoenix6-26.50.0-alpha-1.json) (`26.50.0-alpha-1`),
-  [CommandsV3](vendordeps/CommandsV3.json) (`1.0.0`), and
-  [LimelightLib](vendordeps/LimelightLib.json) (`2.0.0-beta2`, Java-only).
-  No PathPlanner/Choreo/AdvantageKit/maple-sim/PhotonVision.
+  [CommandsV3](vendordeps/CommandsV3.json) (`1.0.0`),
+  [LimelightLib](vendordeps/LimelightLib.json) (`2.0.0-beta2`, Java-only), and
+  [AdvantageKit](vendordeps/AdvantageKit.json) (logging-only, no replay).
+  No PathPlanner/Choreo/maple-sim/PhotonVision.
 - Spotless (Google Java Format) runs on every `JavaCompile` (`dependsOn 'spotlessApply'`). Build/format
   from the WPILib VS Code extension or a Java-25 Gradle invocation.
 

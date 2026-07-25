@@ -16,60 +16,39 @@ import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.trajectory.TrapezoidProfile;
 
 /**
- * Drive in a straight line to a field pose using CTRE's {@link LinearPath}, on odometry.
+ * Drive in a straight line to a field pose using odometry - the odometry twin of {@link DriveToTag}
+ * (which is vision-only). Each loop samples a straight-line profile: the profile's velocity is the
+ * feedforward that moves the robot, and X/Y/heading PID trims drift back onto the line.
  *
- * <p>This is the odometry counterpart to {@link DriveToTag} (which is vision-only). It's the
- * building block for an autonomous routine: give it a goal {@link Pose2d} and it profiles a
- * straight-line approach, simultaneously rotating to the goal heading.
- *
- * <p>{@code LinearPath} is a <i>trajectory generator</i>, not a controller. We capture the start
- * pose + velocity once, then each loop sample the path at the absolute elapsed time {@code t}:
- * {@code path.calculate(t, startState, goal)} returns the profiled field-relative pose + velocity
- * at that instant. Because the start state is fixed, {@link LinearPath#totalTime() totalTime()}
- * stays constant and {@link LinearPath#isFinished(double) isFinished(t)} is the entire
- * done-condition - no pose-tolerance bookkeeping.
- *
- * <p>The command output is feedforward + feedback: the profile <b>velocity</b> is the feedforward
- * (this is what actually drives the robot along the line), and three PID controllers (X, Y,
- * heading) add a correction that trims the measured pose back onto the profiled pose to cancel
- * drift.
- *
- * <p>"Classic-style" Commands v3 command on {@link ClassicCommand}, matching {@link DriveToTag}:
- * the v2 lifecycle hooks do the work and the framework wires the coroutine.
+ * <p>Classic-style Commands v3 command on {@link ClassicCommand}, like {@link DriveToTag}.
  */
 public class DriveToPose extends ClassicCommand {
   private final DriveMechanism drivetrain;
   private final Pose2d goal;
 
-  // The straight-line profile generator: linear constraints (max m/s, max m/s^2) for translation,
-  // angular (max rad/s, max rad/s^2) for heading. TODO: tune to the drivetrain's real capability.
+  // Straight-line profile limits: translation (m/s, m/s^2) and rotation (rad/s, rad/s^2).
+  // TODO: tune to the drivetrain's real capability.
   private final LinearPath path =
       new LinearPath(
           new TrapezoidProfile.Constraints(2.5, 3.0),
           new TrapezoidProfile.Constraints(Math.PI, 2.0 * Math.PI));
 
-  // Pose-error feedback, one controller per field axis. These correct measured-vs-profiled drift;
-  // the profile velocity is the feedforward that actually moves the robot. The kP is the only gain
-  // (kI/kD = 0): translation in (m/s) per meter of error, heading in (rad/s) per radian. TODO:
-  // tune.
-  // Raise kP if the bot lags the profile or settles short of the goal; lower it (or add kD) if it
-  // oscillates.
+  // Trims drift back onto the profile (the feedforward does the real work). Raise kP if the robot
+  // lags or stops short; lower it if it oscillates. TODO: tune.
   private final PIDController xController = new PIDController(3.0, 0.0, 0.0);
   private final PIDController yController = new PIDController(3.0, 0.0, 0.0);
   private final PIDController headingController = new PIDController(4.0, 0.0, 0.0);
 
-  // Field-relative velocity request. Blue-origin perspective so the commanded velocity is in the
-  // same frame as the odometry pose (which is always blue-origin); open-loop drive so no
-  // drive-velocity PID tuning is required.
+  // Field-relative velocity request, blue-origin (the same frame as odometry); open-loop so no
+  // drive-velocity PID tuning is needed.
   private final SwerveRequest.ApplyFieldVelocity driveRequest =
       new SwerveRequest.ApplyFieldVelocity()
           .withForwardPerspective(SwerveRequest.ForwardPerspectiveValue.BlueAlliance)
           .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
-  // Captured once at start: the pose + field velocity the trajectory is generated from. The path is
-  // sampled at absolute elapsed time against this fixed state, so totalTime() stays constant.
+  // Captured once at start: the pose + velocity the trajectory is generated from.
   private LinearPath.State startState = new LinearPath.State();
-  // Wall-clock time the command started; elapsed = now - startTime is our trajectory time t.
+  // Trajectory time t = now - startTime.
   private double startTime;
 
   /**
@@ -83,7 +62,7 @@ public class DriveToPose extends ClassicCommand {
     headingController.enableContinuousInput(-Math.PI, Math.PI);
   }
 
-  /** Captures the start state the trajectory is generated from and starts the clock. */
+  /** Captures the start state and starts the clock. */
   @Override
   protected void initialize() {
     startState = new LinearPath.State(drivetrain.getPose(), drivetrain.getFieldVelocity());
@@ -93,20 +72,15 @@ public class DriveToPose extends ClassicCommand {
     headingController.reset();
   }
 
-  /** Runs every robot loop while the command is active. */
   @Override
   protected void execute() {
-    // Sample the trajectory at the elapsed time since start. startState is fixed, so this is a
-    // time-parameterized straight-line path, not a self-advancing generator.
+    // Sample the profile at the elapsed time since start.
     double t = Utils.getCurrentTimeSeconds() - startTime;
     LinearPath.State setpoint = path.calculate(t, startState, goal);
 
     Pose2d measuredPose = drivetrain.getPose();
 
-    // Feedforward: the profile's field-relative velocity at time t. This is what drives the robot
-    // along the line - the PID below only corrects the difference between where the profile says we
-    // should be and where odometry says we are. LinearPath wrapped the heading goal to the shortest
-    // path; the heading controller's continuous input keeps its error wrapped too.
+    // Feedforward = the profile's velocity; PID adds a small correction toward the profiled pose.
     ChassisVelocities feedforward = setpoint.velocity;
     double vx = feedforward.vx + xController.calculate(measuredPose.getX(), setpoint.pose.getX());
     double vy = feedforward.vy + yController.calculate(measuredPose.getY(), setpoint.pose.getY());
@@ -118,17 +92,13 @@ public class DriveToPose extends ClassicCommand {
     drivetrain.setControl(driveRequest.withVelocity(new ChassisVelocities(vx, vy, omega)));
   }
 
-  /**
-   * Done when the trajectory's total time has elapsed. {@code execute()} ran first this loop, so
-   * the path is primed for this start/goal and {@link LinearPath#isFinished(double)} compares the
-   * elapsed time against the (constant) {@link LinearPath#totalTime() totalTime()}.
-   */
+  /** Done when the profile's total time has elapsed. */
   @Override
   protected boolean isFinished() {
     return path.isFinished(Utils.getCurrentTimeSeconds() - startTime);
   }
 
-  /** Idles the drivetrain. Runs on both natural finish and interruption. */
+  /** Stops the drivetrain. Runs on both finish and interruption. */
   @Override
   protected void end(boolean interrupted) {
     drivetrain.setControl(new SwerveRequest.Idle());

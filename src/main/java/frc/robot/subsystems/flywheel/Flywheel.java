@@ -55,8 +55,6 @@ public class Flywheel extends Mechanism {
     TalonFXUtil.applyConfigWithRetries(motor, config);
   }
 
-  // The hold commands below use runRepeatedly, which re-sends the request every loop. Phoenix
-  // already holds the last request; re-sending just re-asserts it if the controller reboots.
   // Holds never finish - never make a sequence wait on one. Need a finish line? Add it at the
   // call site: flywheel.spinUp().until(flywheel::isAtTarget). (Full rule in Arm.java.)
 

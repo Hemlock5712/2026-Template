@@ -1,82 +1,88 @@
 ---
 name: log-reading
-description: How to find and analyze this robot's logs — WPILib .wpilog files written by DataLogManager (drive telemetry + DS + NetworkTables) and Phoenix .hoot files written by the CANivore. Lists the real keys this code publishes, where logs live, and how to read them with AdvantageScope or a scripted DataLogReader. Use after a sim/match run to inspect what the robot did.
+description: How to find and analyze this robot's logs — AdvantageKit .wpilog files (drive telemetry + DS + system stats) and Phoenix .hoot files written by the CANivore. Lists the real keys this code logs, where logs live, and how to read them with AdvantageScope or a scripted DataLogReader. Use after a sim/match run to inspect what the robot did.
 ---
 
 # Log Reading
 
-This template is **logging-only** — there is no AdvantageKit and no log-replay. Two kinds of logs
-get written:
+This template logs with **AdvantageKit, logging-only** — no IO layers and no log-replay. Two kinds
+of logs get written:
 
 | Format | Written by | What's in it |
 | --- | --- | --- |
-| **`.wpilog`** | WPILib `DataLogManager` + `DriverStation.startDataLog`, started in [Robot.java](src/main/java/frc/robot/Robot.java) | Every NetworkTables value change (incl. all `Drivetrain/*` telemetry), console output, DS state, joysticks |
+| **`.wpilog`** | AdvantageKit (`WPILOGWriter`, wired in [Robot.java](src/main/java/frc/robot/Robot.java)) | Everything passed to `Logger.recordOutput` (all `Drivetrain/*` telemetry), DS state + joysticks, Systemcore system stats, console output |
 | **`.hoot`** | Phoenix 6 / the CANivore, configured in [TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) (`new CANBus("canivore", "./logs/example.hoot")`) | Raw CAN traffic for every Phoenix device (drive/steer TalonFX, CANcoders, Pigeon2, arm, flywheel) at high rate |
 
 Start with the `.wpilog` for "what did the robot think/do"; drop to the `.hoot` for low-level
-device signals (applied volts, currents, closed-loop error, CAN health).
+device signals (applied volts, currents, closed-loop error, CAN health). Note the `.wpilog` records
+at the **50 Hz loop rate** — AdvantageKit keeps one value per key per loop — so high-rate analysis
+(e.g. 250 Hz odometry detail) belongs in the `.hoot`.
 
 ## Where logs live
 
 | Source | Path |
 | --- | --- |
-| Sim `.wpilog` | [logs/](logs/) in the project dir — `WPILIB_<UTC-yyyyMMdd_HHmmss>.wpilog`. Newest is most recent. (Named `WPILIB_TBD_*` until the DS connects, then renamed.) |
+| Sim `.wpilog` | [logs/](logs/) in the project dir — `akit_<random>.wpilog`, renamed to `akit_<yy-MM-dd_HH-mm-ss>.wpilog` once the time is known. Newest is most recent. |
 | Sim `.hoot` | [logs/example.hoot](logs/) (path from `TunerConstants`). |
-| Real robot `.wpilog` | A USB drive's `logs/` folder if attached, else `/home/systemcore/logs/` (SystemCore, **not** a roboRIO). |
+| Real robot `.wpilog` | USB drive `/U/logs` (the `WPILOGWriter` default; pass a path to change it). |
 | Real robot `.hoot` | Wherever the `CANBus` log path points; pull via Tuner X. |
 
-## What this code actually publishes (the `.wpilog` keys)
+Everything logged is also mirrored **live** to NetworkTables under `/AdvantageKit/...`
+(`NT4Publisher`), so AdvantageScope can watch the same keys in real time.
 
-[Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java) publishes the swerve state to the
-NetworkTables table `Drivetrain` every odometry update. `DataLogManager` logs NT entries with an
-**`NT:` prefix**, so in the log file the keys are `NT:/Drivetrain/...`:
+## What this code actually logs (the `.wpilog` keys)
+
+[Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java) logs the swerve state once per loop
+(sampled from the drivetrain by [DriveMechanism](src/main/java/frc/robot/subsystems/DriveMechanism.java)).
+Outputs land under a **`/RealOutputs/` prefix**:
 
 | Log key | Type | Meaning |
 | --- | --- | --- |
-| `NT:/Drivetrain/Pose` | `struct:Pose2d` | Odometry pose (blue-alliance origin) |
-| `NT:/Drivetrain/Velocity` | `struct:ChassisVelocities` | Measured robot-relative chassis velocity |
-| `NT:/Drivetrain/RawHeading` | `struct:Rotation2d` | Raw gyro yaw |
-| `NT:/Drivetrain/ModuleStates` | `struct:SwerveModuleVelocity[]` | Per-module measured velocity + angle |
-| `NT:/Drivetrain/ModuleTargets` | `struct:SwerveModuleVelocity[]` | Per-module commanded targets |
-| `NT:/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
-| `NT:/Drivetrain/TranslationSpeedMps` | `double` | `hypot(vx, vy)` |
-| `NT:/Drivetrain/RotationSpeedRadPerSec` | `double` | Yaw rate magnitude |
-| `NT:/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples |
-| `NT:/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
+| `/RealOutputs/Drivetrain/Pose` | `struct:Pose2d` | Odometry pose (blue-alliance origin) |
+| `/RealOutputs/Drivetrain/Velocity` | `struct:ChassisVelocities` | Measured robot-relative chassis velocity |
+| `/RealOutputs/Drivetrain/RawHeading` | `struct:Rotation2d` | Raw gyro yaw |
+| `/RealOutputs/Drivetrain/ModuleStates` | `struct:SwerveModuleVelocity[]` | Per-module measured velocity + angle |
+| `/RealOutputs/Drivetrain/ModuleTargets` | `struct:SwerveModuleVelocity[]` | Per-module commanded targets |
+| `/RealOutputs/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
+| `/RealOutputs/Drivetrain/TranslationSpeedMps` | `double` | `hypot(vx, vy)` |
+| `/RealOutputs/Drivetrain/RotationSpeedRadPerSec` | `double` | Yaw rate magnitude |
+| `/RealOutputs/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples |
+| `/RealOutputs/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
+| `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state |
 
-Also present, from `DriverStation.startDataLog` and WPILib itself:
+Also present, logged by AdvantageKit itself (all verified in a real sim log):
 
 | Log key | Meaning |
 | --- | --- |
-| `DS:controlWord` | DS enabled/mode bits — use to find **enabled** transitions |
-| `DS:opMode` | The selected OpMode id — which mode/routine was running |
-| `DS:joystick` | Joystick/controller data |
-| `NT:/FMSInfo/*` | `ControlWord`, `IsRedAlliance`, `MatchType`, `MatchNumber`, `EventName`, `GameData` |
-| `messages` | Console / `DataLogManager.log(...)` output |
+| `/DriverStation/Enabled`, `/DriverStation/RobotMode` | Enabled flag + mode — use to find **enabled** transitions |
+| `/DriverStation/OpMode`, `/DriverStation/OpModeId` | The selected OpMode (name + id) — which mode/routine was running |
+| `/DriverStation/Joystick0..5/*` | Joystick/controller data (axes, buttons, POVs) |
+| `/DriverStation/MatchType`, `MatchNumber`, `EventName`, `GameData`, `AllianceStation` | Match info |
+| `/SystemStats/*` | Systemcore health: `BatteryVoltage`, `CPU/*`, `Memory/*`, `IMU/*`, `Network/CAN0..4/*`, `Faults/*` |
+| `/RealOutputs/Console` | Captured console output (`System.out` + errors) |
+| `/RealOutputs/Logger/*`, `/RealOutputs/LoggedRobot/*` | AdvantageKit's own timing diagnostics |
+| `/RealMetadata/ProjectName` | Metadata recorded at startup |
 
-> **Want a new key in the log?** Publish it to NetworkTables — either add it to
-> [Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java), or `NetworkTableInstance`-publish
-> it anywhere. `DataLogManager` captures every NT change automatically. There is no
-> `Logger.recordOutput` / `@AutoLog` here.
+> **Want a new key in the log?** Call `Logger.recordOutput("MySubsystem/MyKey", value)` from the
+> main loop — anywhere in a subsystem, command, or OpMode. Or annotate a getter/field with
+> `@AutoLogOutput` on any object reachable from `Robot`'s fields (`AutoLogOutputManager.addObject`
+> is wired in `Robot`). **NetworkTables topics are NOT auto-recorded** — publishing to NT alone no
+> longer puts a value in the log.
 
-**Finding auto/teleop start:** look at `DS:controlWord` (enabled bit + mode bits) and `DS:opMode`.
-The first sample where the control word flips to enabled is the start of the active mode; `DS:opMode`
-tells you which OpMode it was.
+**Finding auto/teleop start:** `/DriverStation/Enabled` flips true at the start of the active mode;
+`/DriverStation/OpMode` tells you by name which OpMode was selected.
 
-**Vision keys:** `DataLogManager` logs all NT, so with real Limelights (`limelight-br` /
-`limelight-bl`) connected you get: their raw `/limelight-br/*` / `/limelight-bl/*` entries
-(LimelightLib 2 publishes results as one atomic MessagePack blob per camera, not per-value
-topics); `/limelight_telemetry/*` — LimelightLib's auto-published accepted/rejected pose
-estimates (AdvantageScope-friendly); and `/limelightshared/robot_orientation_set` — the robot
-heading `DriveMechanism` broadcasts to all cameras at 250 Hz for MegaTag2. In **sim there is no
-Limelight**, so expect only `limelightshared` and empty `limelight_telemetry` topics.
+**Vision keys:** LimelightLib's NT tables (`/limelight-br/*` raw results, `/limelight_telemetry/*`
+accepted/rejected estimates, `/limelightshared/robot_orientation_set`) are **live-only now** — view
+them in AdvantageScope while connected, but they are not recorded to the `.wpilog` (nothing routes
+them through `Logger`). In **sim there is no Limelight**, so they're empty anyway.
 
 ## Reading `.wpilog` — AdvantageScope (interactive)
 
 Open the `.wpilog` in **AdvantageScope** ("Open Log"). It decodes the struct schemas embedded in the
 log, so `Drivetrain/Pose` drops onto the 2D/3D field view and `ModuleStates`/`ModulePositions`
-render on the swerve widget. Best when you don't yet know which keys matter. Tabular CSV export is
-available for any selection.
+render on the swerve widget; the Console tab shows `/RealOutputs/Console`. Best when you don't yet
+know which keys matter. Tabular CSV export is available for any selection.
 
 ## Reading `.wpilog` — scripted (`wpiutil` DataLogReader)
 
@@ -87,7 +93,7 @@ robot JVM. Two-pass pattern (collect entry names, then values):
 from wpiutil.log import DataLogReader
 import struct
 
-path = "logs/WPILIB_20260626_233929.wpilog"
+path = "logs/akit_26-07-25_01-34-10.wpilog"
 entries = {}
 for r in DataLogReader(path):
     if r.isStart():
@@ -98,7 +104,7 @@ for r in DataLogReader(path):
     if r.isStart() or r.isFinish() or r.isControl() or r.isSetMetadata():
         continue
     name, typ = entries.get(r.getEntry(), ("", ""))
-    if name == "NT:/Drivetrain/Pose":
+    if name == "/RealOutputs/Drivetrain/Pose":
         ts = r.getTimestamp() / 1e6
         x, y, theta = struct.unpack("<ddd", bytes(r.getRaw()))
         print(ts, x, y, theta)
@@ -127,7 +133,7 @@ length by the element size. AdvantageScope is easier for arrays; use Python for 
 `.hoot` is CTRE's binary CAN log. Read it with:
 
 - **Tuner X → Log Extractor** (GUI): open the `.hoot`, browse/plot signals, export CSV, or **convert
-  to `.wpilog`** so you can open it in AdvantageScope alongside the DataLogManager log.
+  to `.wpilog`** so you can open it in AdvantageScope alongside the AdvantageKit log.
 - **`owlet`** (CTRE's CLI converter, ships with Phoenix Tuner): `owlet <in>.hoot <out>.wpilog`.
 
 Use `.hoot` when you need per-device truth the `Drivetrain/*` summary doesn't show: applied output
@@ -139,14 +145,19 @@ voltage, supply/stator current, closed-loop error/reference, device temperature,
   end pose to the routine's goal in [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java).
 - **"Did we stall / saturate?"** `Drivetrain/TranslationSpeedMps` near 0 while a command is active →
   cross-check applied volts / stator current in the `.hoot`.
-- **"Which OpMode ran, and when did it enable?"** `DS:opMode` + `DS:controlWord`.
+- **"Which OpMode ran, and when did it enable?"** `/DriverStation/OpMode` + `/DriverStation/Enabled`.
 - **"Is odometry healthy?"** `Drivetrain/OdometryFrequencyHz` should sit near 250 (CAN FD) and be
   steady.
 - **"Wheels fighting the target?"** Overlay `Drivetrain/ModuleStates` vs `ModuleTargets` per module.
+- **"Brownout / CAN trouble?"** `/SystemStats/BatteryVoltage`, `/SystemStats/Faults/*`,
+  `/SystemStats/Network/CAN0..4/*`.
 
 ## Don'ts
 
-- Don't look for `/RealOutputs/*`, `/ReplayOutputs/*`, or `/AdvantageKit/*` keys — there's no
-  AdvantageKit in this template.
-- Don't expect a `_replay.wpilog` — there is no replay path. Re-run the sim instead (`run-sim` skill).
+- Don't look for `NT:`-prefixed or `DS:`-prefixed keys — those were the old DataLogManager format.
+  This template's keys live under `/RealOutputs/`, `/DriverStation/`, `/SystemStats/`.
+- Don't look for `/ReplayOutputs/*` or expect a `_replay.wpilog` — logging-only, no replay path.
+  Re-run the sim instead (`run-sim` skill).
+- Don't expect NT topics in the log — only `Logger.recordOutput` / `@AutoLogOutput` values are
+  recorded (that includes the Limelight NT tables: live-only).
 - Don't expect vision keys from a sim log — there's no vision sim.

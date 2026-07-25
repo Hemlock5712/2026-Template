@@ -5,6 +5,7 @@
 package frc.robot.opmodes;
 
 import frc.robot.Robot;
+import org.littletonrobotics.junction.Logger;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.command3.StateMachine;
@@ -12,7 +13,6 @@ import org.wpilib.command3.StateMachine.State;
 import org.wpilib.command3.button.CommandNiDsXboxController;
 import org.wpilib.opmode.PeriodicOpMode;
 import org.wpilib.opmode.Teleop;
-import org.wpilib.system.DataLogManager;
 
 /**
  * The superstructure run as a {@link StateMachine} - the state-machines lesson at <a
@@ -72,10 +72,10 @@ public class StateMachineTeleop extends PeriodicOpMode {
     sm.switchFromAny().to(stowed).when(driver.b());
 
     // Entry/exit hooks: side effects on the way in and out of a state, without touching the
-    // state's command. These write markers into the .wpilog, so when you read the log later you
-    // can see exactly when the machine entered and left Scoring (see the log-reading skill).
-    scoring.onEnter(() -> DataLogManager.log("Superstructure: entered Scoring"));
-    scoring.onExit(() -> DataLogManager.log("Superstructure: left Scoring"));
+    // state's command. This logs a true/false trace, so in the log you can see exactly when the
+    // machine was in Scoring (see the log-reading skill).
+    scoring.onEnter(() -> Logger.recordOutput("Superstructure/Scoring", true));
+    scoring.onExit(() -> Logger.recordOutput("Superstructure/Scoring", false));
 
     // More power, when you need it (uncomment and adapt):
     //

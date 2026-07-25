@@ -29,27 +29,26 @@ public class DriveMechanism extends Mechanism {
   // (the checked-in one is an EXAMPLE placeholder with fake device IDs/gains).
   private final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
-  // Publishes the drivetrain state to NetworkTables (and thus the WPILOG via DataLogManager). This
-  // is the project's logging surface - see Telemetry and the log-reading skill.
+  // Logs the drivetrain state with AdvantageKit - see Telemetry and the log-reading skill.
   private final Telemetry telemetry = new Telemetry();
 
   public DriveMechanism() {
     super("Drivetrain");
     // The drivetrain's perspective update used to live in periodic(); run it every loop.
     Scheduler.getDefault().addPeriodic(drivetrain::applyOperatorPerspective);
-    // CTRE calls this from the odometry thread (250 Hz on FD): publish telemetry, and feed every
-    // Limelight the freshest heading + yaw rate (degrees, CCW+) for MegaTag2.
+    // Log the drivetrain state once per loop (AdvantageKit logging belongs on the main loop).
+    Scheduler.getDefault().addPeriodic(() -> telemetry.telemeterize(drivetrain.getState()));
+    // CTRE calls this from the odometry thread (250 Hz on FD): feed every Limelight the freshest
+    // heading + yaw rate (degrees, CCW+) for MegaTag2.
     drivetrain.registerTelemetry(
-        state -> {
-          telemetry.telemeterize(state);
-          Limelight.setSharedRobotOrientation(
-              state.Pose.getRotation().getDegrees(),
-              Math.toDegrees(state.Velocity.omega),
-              0,
-              0,
-              0,
-              0);
-        });
+        state ->
+            Limelight.setSharedRobotOrientation(
+                state.Pose.getRotation().getDegrees(),
+                Math.toDegrees(state.Velocity.omega),
+                0,
+                0,
+                0,
+                0));
   }
 
   /** Returns a command that continuously applies the supplied control request to the drivetrain. */

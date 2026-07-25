@@ -154,10 +154,13 @@ for a real robot. Key values:
 
 ## Logging
 
-No AdvantageKit. [Robot.java](src/main/java/frc/robot/Robot.java) starts WPILib `DataLogManager` +
-`DriverStation.startDataLog(...)`, which record **every NetworkTables value change** (including
-everything [Telemetry](src/main/java/frc/robot/utils/Telemetry.java) publishes under `Drivetrain/*`),
-console output, and DS/joystick data to a `.wpilog`. Phoenix devices also log to `./logs/example.hoot`.
+**AdvantageKit, logging-only** (no IO layers, no replay). [Robot.java](src/main/java/frc/robot/Robot.java)
+starts the AdvantageKit `Logger` (`WPILOGWriter` + `NT4Publisher`) and ticks it in `robotPeriodic()`
+— this template extends `OpModeRobot`, not `LoggedRobot`, so the tick is manual via
+`Logger.AdvancedHooks`. [Telemetry](src/main/java/frc/robot/utils/Telemetry.java) logs the drive
+state under `Drivetrain/*` once per loop; DS/joystick data, system stats, and console output are
+captured by AdvantageKit itself. **NT topics are not auto-recorded** — new values go in the log via
+`Logger.recordOutput` or `@AutoLogOutput`. Phoenix devices also log to `./logs/example.hoot`.
 Full details (paths, key list, how to read both formats) are in the **`log-reading`** skill.
 
 ## Simulation

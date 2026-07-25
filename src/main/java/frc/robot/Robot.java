@@ -11,12 +11,14 @@ import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
 import frc.robot.subsystems.vision.Vision;
 import frc.robot.utils.SimStartup;
+import org.littletonrobotics.junction.AutoLogOutputManager;
+import org.littletonrobotics.junction.Logger;
+import org.littletonrobotics.junction.networktables.NT4Publisher;
+import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.command3.button.RobotModeTriggers;
-import org.wpilib.driverstation.DriverStation;
 import org.wpilib.framework.OpModeRobot;
-import org.wpilib.system.DataLogManager;
 
 /**
  * Owns the robot's shared hardware in one place. With the OpMode framework there is no {@code
@@ -44,13 +46,14 @@ public class Robot extends OpModeRobot {
   public final Limelight limelightBL = new Limelight("limelight-bl");
 
   public Robot() {
-    // Start on-robot logging. There is no AdvantageKit in this template; the "logging-only" story
-    // is DataLogManager - it records every NetworkTables value change (including everything
-    // Telemetry publishes under Drivetrain/*) to a .wpilog, plus console output. startDataLog adds
-    // the driver-station state and joystick data. Logs go to ./logs in sim and to a USB drive (or
-    // /home/systemcore/logs) on the real robot. See the log-reading skill.
-    DataLogManager.start();
-    DriverStation.startDataLog(DataLogManager.getLog());
+    // AdvantageKit logging: .wpilog file (./logs in sim, USB on the robot) plus live
+    // NetworkTables for AdvantageScope. See the log-reading skill.
+    Logger.recordMetadata("ProjectName", "2027-Template");
+    Logger.addDataReceiver(new WPILOGWriter());
+    Logger.addDataReceiver(new NT4Publisher());
+    Logger.AdvancedHooks.disableRobotBaseCheck(); // we extend OpModeRobot, not LoggedRobot
+    Logger.start();
+    AutoLogOutputManager.addObject(this);
 
     // Brake while disabled, in every mode. Created here (before any OpMode is selected) so the
     // binding is global; the opmodes' bindings are scoped to their OpMode and removed on a switch.
@@ -70,6 +73,9 @@ public class Robot extends OpModeRobot {
 
   @Override
   public void robotPeriodic() {
+    // AdvantageKit: flush the previous logging cycle, start this one.
+    Logger.AdvancedHooks.invokePeriodicAfterUser(0, 0);
+    Logger.AdvancedHooks.invokePeriodicBeforeUser();
     Scheduler.getDefault().run();
   }
 

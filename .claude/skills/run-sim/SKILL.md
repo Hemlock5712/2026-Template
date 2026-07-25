@@ -85,7 +85,7 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
 3. Stop the process to flush the log. On Windows the Gradle daemon spawns the sim JVM; send
    `Ctrl+Break` (not `Ctrl+C`) so the WPILOG flushes, or `Stop-Process -Name java`. From a script,
    send `CTRL_BREAK_EVENT` to the process group.
-4. Hand the newest `logs/WPILIB_*.wpilog` to the **`log-reading`** skill.
+4. Hand the newest `logs/akit_*.wpilog` to the **`log-reading`** skill.
 
 ## Simulation gotchas specific to this template
 
@@ -95,7 +95,7 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
 - **Physics is CTRE Phoenix 6 swsim only** (no maple-sim rigid-body). The 4 ms sim `Notifier` lives
   in [CommandSwerveDrivetrain](src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java).
 - **"CAN message is stale" spam at startup** is normal in sim while signals spin up — ignore it.
-- **No log-replay.** This template has no AdvantageKit IO-replay layer; there is no `-Preplay`. You
+- **No log-replay.** AdvantageKit here is logging-only (no IO layer); there is no `-Preplay`. You
   re-run the sim to test a change, then compare logs.
 - **Gradle needs a Java 25 JDK.** If you see `invalid source release: 25`, point Gradle at the
   WPILib 2027 toolchain JDK (`-Dorg.gradle.java.home=...` or `org.gradle.java.home` in

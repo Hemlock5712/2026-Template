@@ -19,10 +19,11 @@ import org.wpilib.command3.Scheduler;
  * <p>LimelightLib does the heavy lifting: per {@link PoseEstimateConfig} it rejects estimates that
  * fail the filters and computes distance/tag-count-scaled standard deviations, so an accepted
  * estimate drops straight into {@code addVisionMeasurement}. This class only picks which estimate
- * type to trust per frame - MegaTag1 (vision heading) needs 2+ tags, MegaTag2 (gyro heading) works
- * with a lone tag - so seed the gyro or single-tag vision will be off. The robot heading MegaTag2
- * needs is fed to every camera at odometry rate by {@link DriveMechanism}, via the shared {@code
- * limelightshared} table.
+ * type to trust per frame - MegaTag1 (solves from the tags alone) needs 2+ tags, MegaTag2 (leans on
+ * the gyro heading) works with a lone tag - so seed the gyro or single-tag vision will be off.
+ * Vision only ever corrects x/y; the gyro owns heading. The robot heading MegaTag2 needs is fed to
+ * every camera at odometry rate by {@link DriveMechanism}, via the shared {@code limelightshared}
+ * table.
  *
  * <p>Does nothing in sim (no camera). The library publishes accepted/rejected pose telemetry to the
  * {@code limelight_telemetry} NT table automatically - view it in AdvantageScope.
@@ -32,38 +33,33 @@ public class Vision {
   private static final double MAX_TAG_DISTANCE_METERS = 4.0;
 
   /*
-   * How the library turns a config into an estimate's std devs (the "trust numbers" the pose
-   * estimator wants - SMALLER = trust vision MORE). Per accepted estimate it computes:
+   * The library computes each estimate's std devs - the "trust numbers" the pose estimator wants
+   * (smaller = trust vision more) - for both estimate types as:
    *
-   *   scale = d ^ distanceExponent / n ^ tagCountExponent
+   *   xy    = 0.15 * d^2 / sqrt(n)     [d = average tag distance (m), n = tag count]
+   *   theta = untrusted (library default) - the gyro owns heading, so seed it correctly.
    *
-   *   xy    = clamp(baseXY    * scale, 0.0001 m, max)    [meters]
-   *   theta = clamp(baseTheta * scale, 0.01 rad, max)    [radians]
-   *
-   * where d = average distance to the tags (meters) and n = how many field-mapped tags it saw.
-   * The default exponents are 1 and 0.5, so trust falls off linearly with distance and improves
-   * with sqrt(tag count). With the two configs below that works out to:
-   *
-   *   MT1 (2+ tags):  xy = 0.5 * d / sqrt(n)     theta = 1.5 * d / sqrt(n)
-   *   MT2 (any tag):  xy = 0.3 * d / sqrt(n)     theta = 9999999 (gyro owns heading)
-   *
-   * The knobs: withStdDevXY / withStdDevTheta set the base (and optionally the clamps),
-   * withStdDevDistanceScaling sets the distance exponent, withStdDevTagCountDivision the tag-count
-   * exponent. An estimate with no distance data comes back untrusted (9999999) on all three axes.
+   * Distance is SQUARED because the camera ranges off the tag's apparent size: corner noise is
+   * constant in pixels, so the range error a pixel causes grows with distance squared. More tags
+   * average that noise down by sqrt(n). The base 0.15 is simply the std dev at 1 m with 1 tag.
    */
+  private static final double XY_STD_DEV = 0.15;
 
-  // MegaTag1 solves position AND heading from the tags alone - only trustworthy with 2+ tags.
-  // withStdDevTheta sets how much to trust that heading (the library default is "not at all").
+  // MegaTag1 solves position from the tags alone (no heading needed) - trustworthy with 2+ tags.
   private static final PoseEstimateConfig MT1_CONFIG =
       PoseEstimateConfig.defaultMT1()
           .withMinTagCount(2)
           .withMaxAvgTagDistance(MAX_TAG_DISTANCE_METERS)
-          .withStdDevTheta(1.5);
+          .withStdDevXY(XY_STD_DEV)
+          .withStdDevDistanceScaling(2.0);
 
   // MegaTag2 leans on the gyro heading we feed it, so a single tag is enough, and its heading
   // output stays untrusted - the gyro owns heading.
   private static final PoseEstimateConfig MT2_CONFIG =
-      PoseEstimateConfig.defaultMT2().withMaxAvgTagDistance(MAX_TAG_DISTANCE_METERS);
+      PoseEstimateConfig.defaultMT2()
+          .withMaxAvgTagDistance(MAX_TAG_DISTANCE_METERS)
+          .withStdDevXY(XY_STD_DEV)
+          .withStdDevDistanceScaling(2.0);
 
   private final Limelight camera;
   private final DriveMechanism drivetrain;

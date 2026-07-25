@@ -6,11 +6,8 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import org.wpilib.driverstation.DriverStationErrors;
 
 /**
- * Utility class for common TalonFX motor operations.
- *
- * <p>Phoenix 6's {@code Configurator.apply(...)} runs once and returns a status code — it does NOT
- * retry on its own. {@link #applyConfigWithRetries} retries up to 5 times, which catches transient
- * CAN faults at robot boot.
+ * TalonFX helpers. Phoenix's {@code apply(...)} does NOT retry on its own; {@link
+ * #applyConfigWithRetries} retries a few times to ride out CAN hiccups at boot.
  */
 public final class TalonFXUtil {
 
@@ -19,12 +16,9 @@ public final class TalonFXUtil {
   }
 
   /**
-   * Applies a configuration to a TalonFX motor with automatic retries.
+   * Applies a config to a TalonFX, retrying on failure.
    *
-   * @param motor The motor to configure
-   * @param config The configuration to apply
-   * @param maxRetries Maximum number of retry attempts (default: 5)
-   * @return true if configuration was successfully applied, false otherwise
+   * @return true if the config applied, false if every retry failed
    */
   public static boolean applyConfigWithRetries(
       TalonFX motor, TalonFXConfiguration config, int maxRetries) {
@@ -35,9 +29,7 @@ public final class TalonFXUtil {
         return true;
       }
     }
-    // Every retry failed. Report it so a misconfigured motor isn't silent - callers can still
-    // branch
-    // on the returned false, but they can't accidentally ignore the failure.
+    // Report loudly so a misconfigured motor isn't silent.
     DriverStationErrors.reportError(
         "TalonFX "
             + motor.getDeviceID()
@@ -50,13 +42,7 @@ public final class TalonFXUtil {
     return false;
   }
 
-  /**
-   * Applies a configuration to a TalonFX motor with default retry count (5).
-   *
-   * @param motor The motor to configure
-   * @param config The configuration to apply
-   * @return true if configuration was successfully applied, false otherwise
-   */
+  /** Applies a config with the default retry count (5). */
   public static boolean applyConfigWithRetries(TalonFX motor, TalonFXConfiguration config) {
     return applyConfigWithRetries(motor, config, 5);
   }

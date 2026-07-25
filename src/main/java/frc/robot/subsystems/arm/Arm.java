@@ -20,11 +20,8 @@ import org.wpilib.command3.Mechanism;
 import org.wpilib.units.measure.Angle;
 
 /**
- * Arm - an example subsystem driven by a Phoenix 6 TalonFX + CANcoder.
- *
- * <p>Pattern to teach: the subsystem owns the hardware, keeps its setters {@code private}, and
- * exposes <b>commands</b> (each returns a {@link Command}). Anything that wants to move the arm
- * does it through a command, which is how the scheduler prevents two things fighting over the
+ * Arm - an example subsystem on a TalonFX + CANcoder. The pattern: own the hardware, keep setters
+ * private, expose commands - that's how the scheduler stops two things from fighting over the
  * motor.
  */
 public class Arm extends Mechanism {
@@ -38,17 +35,14 @@ public class Arm extends Mechanism {
 
   // PID + feedforward gains.
   // TODO: CRITICAL - tune on the real robot before driving the arm under power.
-  // Safe starting values: kG=0.2 (fights gravity), kS=0.2 (overcomes friction),
-  //                       kP=160 (correction strength), kD=30 (smoothness).
-  // If the arm jerks or moves too fast, make these smaller.
+  // Safe starting values: kG=0.2, kS=0.2, kP=160, kD=30. Too jerky or fast? Make them smaller.
   private static final double kG = 0.0; // NEEDS TUNING - gravity feedforward
   private static final double kS = 0.0; // NEEDS TUNING - static friction feedforward
   private static final double kP = 0.0; // NEEDS TUNING - proportional gain
   private static final double kD = 0.0; // NEEDS TUNING - derivative gain
 
   // Motion Magic speed limits.
-  // TODO: CRITICAL - set how fast the arm can move.
-  // Recommended start: cruise=2 rot/s, accel=4 rot/s².
+  // TODO: CRITICAL - set how fast the arm can move. Start: cruise=2 rot/s, accel=4 rot/s².
   private static final double MOTION_MAGIC_CRUISE_VELOCITY = 0.0; // NEEDS SETTING
   private static final double MOTION_MAGIC_ACCELERATION = 0.0; // NEEDS SETTING
 
@@ -78,17 +72,13 @@ public class Arm extends Mechanism {
     TalonFXUtil.applyConfigWithRetries(motor, config);
   }
 
-  // The "move and hold" factories use runRepeatedly, which re-sends the Motion Magic request every
-  // loop. Phoenix already holds the last request; re-sending just re-asserts it after a reboot.
-  //
-  // THE ONE RULE: a hold never finishes, so nothing may ever WAIT on a hold. A hold inside
-  // Command.sequence (or awaited in a coroutine) sticks there forever. When one step needs to
-  // finish, give it a finish line AT THE CALL SITE instead of adding a second method here:
+  // THE ONE RULE: a hold never finishes, so never WAIT on a hold - it sticks in a sequence
+  // forever. Need a finish line? Add it at the call site:
   //
   //   arm.scoring().until(arm::isAtTarget)   // finishes when the arm arrives
   //
-  // The "(hold)" in each command name shows up on the dashboard and in logs - if a stuck
-  // sequence is sitting on a "(hold)", that's the bug.
+  // The "(hold)" in each name shows up on the dashboard and in logs - a stuck sequence sitting
+  // on a "(hold)" is the bug.
 
   /** Move to the vertical (stowed) position and hold it. Never finishes - see the rule above. */
   public Command vertical() {

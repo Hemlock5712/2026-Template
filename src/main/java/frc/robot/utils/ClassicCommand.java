@@ -11,30 +11,8 @@ import org.wpilib.command3.Coroutine;
 import org.wpilib.command3.Mechanism;
 
 /**
- * The classic four-method command style on top of Commands v3 coroutines.
- *
- * <p>Commands v3 commands are normally written as a single linear coroutine body (see {@code
- * mechanism.run(...)}). For something with explicit, stateful steps - or for students coming from
- * the v2 docs - the familiar {@code initialize} / {@code execute} / {@code isFinished} / {@code
- * end} lifecycle can be clearer. Extend this class and override the pieces you need; the instance
- * <i>is</i> a {@link Command}, so it can be scheduled or bound to a trigger directly.
- *
- * <p>The lifecycle matches v2:
- *
- * <ul>
- *   <li>{@link #initialize()} runs once when the command starts.
- *   <li>{@link #execute()} runs every loop while the command is active.
- *   <li>{@link #isFinished()} is checked every loop, right after {@code execute}; return true to
- *       finish.
- *   <li>{@link #end(boolean)} runs once when the command ends - {@code interrupted=false} when
- *       {@code isFinished} returned true, {@code interrupted=true} when another command stole one
- *       of this command's mechanisms.
- * </ul>
- *
- * <p>Under the hood this is just a coroutine: {@code initialize}, then a {@code while} loop that
- * calls {@code execute}, checks {@code isFinished}, and {@link Coroutine#yield() yields} a loop;
- * {@code end(false)} runs after the loop, and {@code end(true)} runs from the {@code onCancel} hook
- * (the scheduler drops the coroutine on interruption, so a {@code finally} would not run).
+ * The classic v2 command style ({@code initialize/execute/isFinished/end}) on top of Commands v3.
+ * Extend it and override what you need; the instance is a {@link Command}.
  *
  * <p>Example:
  *
@@ -87,11 +65,10 @@ public abstract class ClassicCommand implements Command {
   }
 
   /**
-   * Runs once when the command ends. Keep this to single-shot cleanup (for example, stopping a
-   * motor); don't loop here.
+   * Runs once when the command ends. Single-shot cleanup only (e.g. stop a motor).
    *
-   * @param interrupted false if {@link #isFinished()} ended the command, true if it was interrupted
-   *     by another command claiming one of its mechanisms.
+   * @param interrupted true if another command interrupted this one, false if {@link #isFinished()}
+   *     ended it.
    */
   protected void end(boolean interrupted) {}
 
@@ -110,8 +87,8 @@ public abstract class ClassicCommand implements Command {
 
   @Override
   public final void onCancel() {
-    end(true); // interrupted finish (coroutine was dropped; this is the only cleanup hook that
-    // runs)
+    // Interruption drops the coroutine, so this is the only cleanup hook that runs.
+    end(true);
   }
 
   @Override

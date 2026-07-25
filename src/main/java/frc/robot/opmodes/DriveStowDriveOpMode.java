@@ -14,31 +14,21 @@ import org.wpilib.opmode.Autonomous;
 import org.wpilib.opmode.PeriodicOpMode;
 
 /**
- * A closed-loop autonomous routine written with coroutines ({@code fork} / {@code await}) - the
- * <b>advanced dialect</b>. Most routines don't need this: see {@link DriveStowDriveChainedOpMode}
- * for the same auto written by chaining ({@code sequence} + {@code .until} + {@code race}), which
- * is the style we teach first. Reach for coroutines when a hold must span many steps, or the logic
- * needs real loops/branches.
+ * The same routine as {@link DriveStowDriveChainedOpMode}, written with coroutines ({@code fork} /
+ * {@code await}) - the <b>advanced dialect</b>. Learn chaining first; reach for coroutines when a
+ * hold must span many steps or the logic needs real loops/branches.
  *
- * <p><b>Why coroutines here instead of {@code Command.sequence}?</b> The {@code sequence} and
- * {@code parallel} builders use the older ownership rule: the group owns <i>every</i> mechanism for
- * the whole routine, so a mechanism that isn't being actively driven right now still shows up as
- * "owned" with nothing actually commanding it. That's fine for trivial logic or plain onboard
- * (open-loop) motors, but for closed-loop mechanisms - our Motion Magic arm and flywheel - the rule
- * is: <i>the command that issued a control request should keep running as long as that request is
- * active.</i> You should never fall back to idle while a motor is still holding a setpoint.
- * Coroutines give that finer-grained control. (Compare with {@link AutonomousOpMode}, which uses
- * {@code Command.sequence} for a plain drivetrain-only routine - exactly the trivial case where the
- * builder is fine.)
+ * <p>Why not {@code Command.sequence}? A sequence owns every mechanism for the whole routine, even
+ * between the steps that command it. Coroutines keep closed-loop mechanisms (our arm and flywheel)
+ * actively commanded the whole time.
  *
- * <p><b>The only three verbs you need:</b>
+ * <p>The three verbs:
  *
  * <ul>
- *   <li>{@code coroutine.await(command)} - run a command and wait here until it finishes.
+ *   <li>{@code coroutine.await(command)} - run a command and wait for it to finish.
  *   <li>{@code coroutine.fork(command)} - start a command and keep going; it runs in the background
- *       (holding a setpoint, say), stays visible in telemetry, and is auto-canceled when this
- *       routine ends.
- *   <li>{@code coroutine.waitUntil(condition)} - pause here until the condition becomes true.
+ *       and is auto-canceled when this routine ends.
+ *   <li>{@code coroutine.waitUntil(condition)} - pause until the condition is true.
  * </ul>
  */
 @Autonomous(name = "Drive Stow Drive")
@@ -56,9 +46,8 @@ public class DriveStowDriveOpMode extends PeriodicOpMode {
                   // Drive to the first pose and wait until we're there.
                   coroutine.await(new DriveToPose(robot.drivetrain, pose1));
 
-                  // Start holding the stow pose (arm vertical + flywheel stopped). fork keeps it
-                  // running - so it stays commanded and visible in telemetry - through the next
-                  // drive, and it is canceled automatically when this routine ends.
+                  // fork: start holding the stow pose and keep going. The hold stays commanded
+                  // through the next drive and is auto-canceled when the routine ends.
                   coroutine.fork(robot.stow());
                   coroutine.waitUntil(robot.arm::isAtTarget); // move on once actually stowed
 

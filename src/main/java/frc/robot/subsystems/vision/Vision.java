@@ -14,38 +14,25 @@ import org.wpilib.command3.Scheduler;
 
 /**
  * Feeds each Limelight's AprilTag pose estimates into the drivetrain's pose estimator. Call {@link
- * #registerAll} once from {@link frc.robot.Robot} with the camera objects it owns.
+ * #registerAll} once from {@link frc.robot.Robot}.
  *
- * <p>LimelightLib does the heavy lifting: per {@link PoseEstimateConfig} it rejects estimates that
- * fail the filters and computes distance/tag-count-scaled standard deviations, so an accepted
- * estimate drops straight into {@code addVisionMeasurement}. This class only picks which estimate
- * type to trust per frame - MegaTag1 (solves from the tags alone) needs 2+ tags, MegaTag2 (leans on
- * the gyro heading) works with a lone tag - so seed the gyro or single-tag vision will be off.
- * Vision only ever corrects x/y; the gyro owns heading. The robot heading MegaTag2 needs is fed to
- * every camera at odometry rate by {@link DriveMechanism}, via the shared {@code limelightshared}
- * table.
+ * <p>The library filters estimates and computes their trust numbers; this class only picks which
+ * estimate type to use per frame - MegaTag1 needs 2+ tags, MegaTag2 leans on the gyro heading so
+ * one tag is enough (seed the gyro, or single-tag vision will be off). Vision only corrects x/y;
+ * the gyro owns heading.
  *
- * <p>Does nothing in sim (no camera). The library publishes accepted/rejected pose telemetry to the
- * {@code limelight_telemetry} NT table automatically - view it in AdvantageScope.
+ * <p>Does nothing in sim (no camera). Accepted/rejected poses show up in AdvantageScope under
+ * {@code limelight_telemetry}.
  */
 public class Vision {
   // How far away tags are still trusted; past this they are too noisy to help.
   private static final double MAX_TAG_DISTANCE_METERS = 4.0;
 
-  /*
-   * The library computes each estimate's std devs - the "trust numbers" the pose estimator wants
-   * (smaller = trust vision more) - for both estimate types as:
-   *
-   *   xy    = 0.15 * d^2 / sqrt(n)     [d = average tag distance (m), n = tag count]
-   *   theta = untrusted (library default) - the gyro owns heading, so seed it correctly.
-   *
-   * Distance is SQUARED because the camera ranges off the tag's apparent size: corner noise is
-   * constant in pixels, so the range error a pixel causes grows with distance squared. More tags
-   * average that noise down by sqrt(n). The base 0.15 is simply the std dev at 1 m with 1 tag.
-   */
+  // Trust numbers (smaller = trust vision more): xy = 0.15 * d^2 / sqrt(n). Error grows with
+  // distance squared (farther tags look smaller); more tags average the noise down.
   private static final double XY_STD_DEV = 0.15;
 
-  // MegaTag1 solves position from the tags alone (no heading needed) - trustworthy with 2+ tags.
+  // MegaTag1 solves position from the tags alone - trustworthy with 2+ tags.
   private static final PoseEstimateConfig MT1_CONFIG =
       PoseEstimateConfig.defaultMT1()
           .withMinTagCount(2)
@@ -53,8 +40,7 @@ public class Vision {
           .withStdDevXY(XY_STD_DEV)
           .withStdDevDistanceScaling(2.0);
 
-  // MegaTag2 leans on the gyro heading we feed it, so a single tag is enough, and its heading
-  // output stays untrusted - the gyro owns heading.
+  // MegaTag2 leans on the gyro heading we feed it, so one tag is enough.
   private static final PoseEstimateConfig MT2_CONFIG =
       PoseEstimateConfig.defaultMT2()
           .withMaxAvgTagDistance(MAX_TAG_DISTANCE_METERS)
@@ -82,7 +68,7 @@ public class Vision {
   /** Runs one vision update: every new camera frame becomes one pose-estimator measurement. */
   private void update() {
     for (LimelightResults frame : camera.readResultsQueue()) {
-      // MegaTag1 when the frame saw 2+ tags; otherwise fall back to MegaTag2 for the lone tag.
+      // Try MegaTag1 first (2+ tags); fall back to MegaTag2 for a lone tag.
       PoseEstimate estimate = camera.getPoseEstimate(frame, PoseEstimateType.MT1_WPIBLUE);
       if (!estimate.isValid()) {
         estimate = camera.getPoseEstimate(frame, PoseEstimateType.MT2_WPIBLUE);

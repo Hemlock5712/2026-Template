@@ -11,17 +11,9 @@ import org.wpilib.opmode.PeriodicOpMode;
 import org.wpilib.opmode.Utility;
 
 /**
- * A utility opmode - the third mode kind alongside {@code @Teleop} and {@code @Autonomous}. Utility
- * mode (formerly "Test") is for safe off-field interaction: calibrating a mechanism, checking
- * sensors, or putting the robot in a known pose for maintenance/transport. Like the other opmodes
- * it's auto-discovered and shows up by name on the driver station.
- *
- * <p>This example simply stows the superstructure (arm vertical, flywheel stopped) - a safe pose to
- * leave the robot in on the cart. Replace the routine with whatever calibration you need; one
- * {@code @Utility} class per utility task, same as autonomous.
- *
- * <p>{@link #start()} fires once when the robot is enabled in this mode, which is where the routine
- * is scheduled.
+ * A utility opmode (formerly "Test"): safe off-field tasks like calibrating a mechanism or posing
+ * the robot for the cart. This one just stows the superstructure - add one {@code @Utility} class
+ * per task.
  */
 @Utility(name = "Stow")
 public class UtilityOpMode extends PeriodicOpMode {

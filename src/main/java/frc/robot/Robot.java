@@ -21,27 +21,19 @@ import org.wpilib.command3.button.RobotModeTriggers;
 import org.wpilib.framework.OpModeRobot;
 
 /**
- * Owns the robot's shared hardware in one place. With the OpMode framework there is no {@code
- * RobotContainer}: the subsystems live here as public fields, and each OpMode in {@code
- * frc.robot.opmodes} reaches them through the {@link Robot} reference it is constructed with.
- *
- * <p>The framework auto-discovers the {@code @Teleop}/{@code @Autonomous} classes in this package
- * (and subpackages) and handles every mode transition, so this class has no per-mode init/periodic
- * methods - only the always-on scheduler tick. Selecting a different mode on the driver station
- * constructs that OpMode and tears down the previous one (its button bindings are scoped to it and
- * removed automatically).
+ * Owns the robot's shared hardware. There is no {@code RobotContainer}: subsystems live here as
+ * public fields, and each OpMode in {@code frc.robot.opmodes} reaches them through the {@link
+ * Robot} it is constructed with.
  */
 public class Robot extends OpModeRobot {
   public final DriveMechanism drivetrain = new DriveMechanism();
 
-  /* Example mechanisms. The superstructure poses that coordinate them live at the bottom of this
-   * class (stow / intake / score / autoScore) so an OpMode can just call robot.stow(). */
+  /* Example mechanisms. The poses that combine them (stow/intake/score) are at the bottom. */
   public final Arm arm = new Arm();
   public final Flywheel flywheel = new Flywheel();
 
-  /* Vision hardware: one LimelightLib object per camera, constructed with the camera's NT name.
-   * Owned here like any other hardware - Vision.registerAll wires them into the pose estimator,
-   * and an OpMode can hand one to DriveToTag (robot.limelightBR) to align to a tag. */
+  /* One Limelight per camera, named by its NT name. Vision.registerAll wires them into the pose
+   * estimator; an OpMode can also hand one to DriveToTag. */
   public final Limelight limelightBR = new Limelight("limelight-br");
   public final Limelight limelightBL = new Limelight("limelight-bl");
 
@@ -55,19 +47,17 @@ public class Robot extends OpModeRobot {
     Logger.start();
     AutoLogOutputManager.addObject(this);
 
-    // Brake while disabled, in every mode. Created here (before any OpMode is selected) so the
-    // binding is global; the opmodes' bindings are scoped to their OpMode and removed on a switch.
+    // Brake while disabled, in every mode. Made here so the binding survives OpMode switches.
     final var idle = new SwerveRequest.Idle();
     RobotModeTriggers.disabled().whileTrue(drivetrain.applyRequest(() -> idle));
 
-    // Vision: wire up every Limelight in one call.
     Vision.registerAll(drivetrain, limelightBR, limelightBL);
   }
 
   @Override
   public void simulationInit() {
-    // Headless auto-enable for agent / CI runs. No-op unless -Dfrc.sim.startMode is set (the
-    // simulateJavaAgent Gradle task sets it). See SimStartup and the run-sim skill.
+    // Headless auto-enable for agent/CI runs; no-op unless -Dfrc.sim.startMode is set.
+    // See the run-sim skill.
     SimStartup.arm();
   }
 
@@ -80,14 +70,8 @@ public class Robot extends OpModeRobot {
   }
 
   // ---------------------------------------------------------------------------
-  // Superstructure - coordinates the Arm and Flywheel so an OpMode gets one
-  // method per robot "pose" instead of juggling both mechanisms by hand. These
-  // live here (rather than in a separate class) so an OpMode reaches them the
-  // same way it reaches the hardware: robot.stow(), robot.score(), and so on.
-  //
-  // Each method returns a command composed of arm and flywheel commands. Because
-  // a command inherits its children's requirements, the result requires both
-  // subsystems, and Command.parallel(...) runs them at the same time.
+  // Superstructure: one method per robot "pose" so an OpMode can just call
+  // robot.stow(). Each runs the arm and flywheel in parallel and requires both.
   // ---------------------------------------------------------------------------
 
   /** Stow for travel: arm vertical, flywheel stopped. Holds forever - never wait on it. */
@@ -106,10 +90,8 @@ public class Robot extends OpModeRobot {
   }
 
   /**
-   * Auto-score prep: raise the arm to its scoring pose and hold shooting speed. Like {@link
-   * #score()}, but {@code .until(...)} gives the arm's hold a finish line - that's the pattern for
-   * making any hold finish, applied at the call site. {@code spinUp} still runs forever, so the
-   * group as a whole is a hold too.
+   * Like {@link #score()}, but {@code .until(...)} gives the arm's hold a finish line. The flywheel
+   * still spins forever, so the whole group is still a hold.
    */
   public Command autoScore() {
     return Command.parallel(

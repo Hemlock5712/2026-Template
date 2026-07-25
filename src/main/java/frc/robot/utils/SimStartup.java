@@ -10,31 +10,12 @@ import org.wpilib.hardware.hal.RobotMode;
 import org.wpilib.simulation.DriverStationSim;
 
 /**
- * Headless simulation auto-enable. Lets an agent / CI run the robot in simulation and have it
- * actually start playing, instead of sitting on the disabled screen waiting for a human to click
- * "Enable" in the sim GUI.
+ * Headless sim auto-enable: lets an agent/CI run start the robot without a human clicking Enable.
+ * {@link frc.robot.Robot#simulationInit()} calls {@link #arm()}, which reads the {@code
+ * frc.sim.startMode} system property (see the run-sim skill) and drives the sim driver station.
  *
- * <p>Call {@link #arm()} once from {@link frc.robot.Robot#simulationInit()}. In simulation only, it
- * reads the system property {@code frc.sim.startMode} (set from the Gradle command line - see
- * {@code build.gradle} and the {@code run-sim} skill) and drives {@link DriverStationSim} to select
- * an OpMode and enable the robot.
- *
- * <p>Property values:
- *
- * <ul>
- *   <li>{@code auto} / {@code teleop} / {@code utility} - enable in that mode, picking the first
- *       OpMode of that kind that the framework discovered.
- *   <li>{@code <mode>:<OpMode name>} - e.g. {@code auto:Drive To Pose} - enable in that mode and
- *       pick the OpMode whose {@code @Autonomous/@Teleop/@Utility} {@code name} matches.
- *   <li>empty / {@code disabled} / unset - do nothing (robot stays disabled). This is the default
- *       for a plain {@code simulateJava}.
- * </ul>
- *
- * <p>How it works: the OpMode framework registers every {@code @Autonomous/@Teleop/@Utility} class
- * with the driver station during the {@code OpModeRobot} constructor, so by the time {@code
- * simulationInit()} runs the options are published and {@link DriverStationSim#getOpModeOptions()}
- * can resolve a name to an opmode id. Selecting an opmode id + enabling is exactly what a human
- * does in the sim DS; the first robot loop then constructs that OpMode and calls {@code start()}.
+ * <p>Values: {@code auto} / {@code teleop} / {@code utility} (first OpMode of that kind), {@code
+ * <mode>:<OpMode name>} to pick one by name, or empty/{@code disabled} to stay disabled.
  */
 public final class SimStartup {
   private SimStartup() {}
@@ -92,10 +73,8 @@ public final class SimStartup {
       return;
     }
 
-    // The control word is assembled from separate sim fields: setOpMode supplies the name-hash
-    // portion of the id, and setRobotMode supplies the mode bits. Both are required - without
-    // setRobotMode the id the framework reads back is missing its mode bits and won't match the
-    // opmode it registered ("No OpMode found for mode ...").
+    // Both setRobotMode and setOpMode are required - the opmode id the framework reads back
+    // combines the two, and it won't match without the mode bits.
     DriverStationSim.setDsAttached(true);
     DriverStationSim.setRobotMode(mode);
     DriverStationSim.setOpMode(chosen.id);

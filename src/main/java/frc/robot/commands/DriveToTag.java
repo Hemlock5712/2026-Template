@@ -6,8 +6,9 @@ package frc.robot.commands;
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import com.limelightvision.Limelight;
+import com.limelightvision.Limelight.FiducialTarget;
 import frc.robot.subsystems.DriveMechanism;
-import frc.robot.subsystems.vision.LimelightHelpers;
 import frc.robot.utils.ClassicCommand;
 import org.wpilib.math.controller.ProfiledPIDController;
 import org.wpilib.math.geometry.Pose3d;
@@ -34,9 +35,8 @@ import org.wpilib.math.trajectory.TrapezoidProfile;
 public class DriveToTag extends ClassicCommand {
   private final DriveMechanism drivetrain;
 
-  // Which Limelight to read (must match a camera name registered in Robot, e.g. "limelight-br")
-  // and which AprilTag to align to.
-  private final String camera;
+  // Which Limelight to read (one of the camera objects Robot owns) and which AprilTag to align to.
+  private final Limelight camera;
   private final int targetTagId;
 
   // One trapezoidal PID per axis. The profile inside each (max velocity, max accel) gives
@@ -59,10 +59,10 @@ public class DriveToTag extends ClassicCommand {
       new SwerveRequest.ApplyRobotVelocity().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
 
   // Latest target-space reading, cached by execute() so isFinished() can reuse it instead of
-  // reading the Limelight a second time in the same loop.
-  private Pose3d robotInTag = Pose3d.kZero;
+  // reading the Limelight a second time in the same loop. Null = our tag isn't in view.
+  private Pose3d robotInTag = null;
 
-  public DriveToTag(DriveMechanism drivetrain, String camera, int targetTagId) {
+  public DriveToTag(DriveMechanism drivetrain, Limelight camera, int targetTagId) {
     super("DriveToTag", drivetrain); // name + requirement, like v2 addRequirements(drivetrain)
     this.drivetrain = drivetrain;
     this.camera = camera;
@@ -80,88 +80,84 @@ public class DriveToTag extends ClassicCommand {
    */
   @Override
   protected void initialize() {
-    // Make our tag the camera's primary target, so target-space pose is measured against it.
-    LimelightHelpers.setPriorityTagID(camera, targetTagId);
+    // Make our tag the camera's primary target (its own crosshair/telemetry track it too).
+    camera.setPriorityTagID(targetTagId);
 
-    robotInTag = onTargetTag() ? LimelightHelpers.getBotPose3d_TargetSpace(camera) : Pose3d.kZero;
-    if (robotInTag.equals(Pose3d.kZero)) {
+    robotInTag = readRobotInTag();
+    if (robotInTag == null) {
       return;
     }
 
-    distance.reset(Math.abs(robotInTag.getZ()));
-    lateral.reset(-robotInTag.getX());
-    heading.reset(-robotInTag.getRotation().getY());
+    distance.reset(robotInTag.getX());
+    lateral.reset(robotInTag.getY());
+    heading.reset(robotInTag.getRotation().getZ());
   }
 
   /** Runs every robot loop while the command is active. */
   @Override
   protected void execute() {
-    // If the camera's primary tag isn't ours (wrong tag, or none in view), don't drive - idle and
-    // wait for it. Gate robotInTag to kZero so isFinished() can't report "done."
-    if (!onTargetTag()) {
-      drivetrain.setControl(new SwerveRequest.Idle());
-      robotInTag = Pose3d.kZero;
-      return;
-    }
-
-    // Robot pose in target space (+X right of tag, +Y down, +Z out of the tag face); zero Pose3d
-    // means the target-space data hasn't filled yet (it can lag the tag id by a frame). Preferred
-    // over getTV(), which can flip true before target-space fills.
-    robotInTag = LimelightHelpers.getBotPose3d_TargetSpace(camera);
-    if (robotInTag.equals(Pose3d.kZero)) {
+    // If the camera doesn't see our tag (wrong tag, or none in view), don't drive - idle and
+    // wait for it. robotInTag stays null so isFinished() can't report "done."
+    robotInTag = readRobotInTag();
+    if (robotInTag == null) {
       drivetrain.setControl(new SwerveRequest.Idle());
       return;
     }
 
-    double measuredDistance = Math.abs(robotInTag.getZ()); // out from the tag, always positive
-    double measuredLateral = -robotInTag.getX(); // + = robot LEFT of the tag normal
-    double measuredHeading = -robotInTag.getRotation().getY(); // + = robot rotated CCW
+    // Robot pose in the tag's frame (2027 convention: +X out of the tag face, +Y to the tag's
+    // left, +Z up). At the goal the robot sits at the POI standoff (X = 0, Y = 0) facing the tag -
+    // and since robot-forward then points INTO the tag face, "facing the tag" is yaw = ±pi, not 0.
+    double measuredDistance = robotInTag.getX(); // + = meters out from the tag face
+    double measuredLateral = robotInTag.getY(); // + = meters toward the tag's left
+    double measuredYaw = robotInTag.getRotation().getZ(); // robot yaw in the tag frame
 
     // Tag-frame velocities: PID + profile-velocity feedforward. FF commands the profile's velocity
     // directly; PID only corrects drift. Without FF the robot trails the setpoint.
-    double vx =
-        -(distance.calculate(measuredDistance, 0.0)
-            + distance.getSetpoint().velocity); // + toward tag (standoff = POI offset)
-    double vy =
-        lateral.calculate(measuredLateral, 0.0)
-            + lateral.getSetpoint().velocity; // + to the robot's left
-    double omega =
-        heading.calculate(measuredHeading, 0.0) + heading.getSetpoint().velocity; // + CCW
+    double vx = distance.calculate(measuredDistance, 0.0) + distance.getSetpoint().velocity;
+    double vy = lateral.calculate(measuredLateral, 0.0) + lateral.getSetpoint().velocity;
+    double omega = heading.calculate(measuredYaw, Math.PI) + heading.getSetpoint().velocity;
 
-    // Rotate tag-frame velocities into the body frame and command the swerve.
+    // The velocities above are in the tag's frame; the robot sits rotated measuredYaw within it,
+    // so rotate them into the body frame and command the swerve.
     ChassisVelocities body =
-        new ChassisVelocities(vx, vy, omega)
-            .toRobotRelative(Rotation2d.fromRadians(measuredHeading));
+        new ChassisVelocities(vx, vy, omega).toRobotRelative(Rotation2d.fromRadians(measuredYaw));
     drivetrain.setControl(driveRequest.withVelocity(body));
   }
 
   /**
-   * Done when we have a valid target-space reading AND all three controllers are at-goal. Reuses
-   * the reading execute() just cached, so the loop hits the Limelight only once. The validity gate
-   * avoids a false "done" before the first calculate() sets the goal - a fresh controller reports
-   * at-goal because its goal and setpoint both default to zero.
+   * Done when we see our tag AND all three controllers are at-goal. Reuses the reading execute()
+   * just cached, so the loop hits the Limelight only once. The visibility gate avoids a false
+   * "done" before the first calculate() sets the goal - a fresh controller reports at-goal because
+   * its goal and setpoint both default to zero.
    */
   @Override
   protected boolean isFinished() {
-    return !robotInTag.equals(Pose3d.kZero)
-        && distance.atGoal()
-        && lateral.atGoal()
-        && heading.atGoal();
+    return robotInTag != null && distance.atGoal() && lateral.atGoal() && heading.atGoal();
   }
 
   /** Idles the drivetrain and clears the tag priority. Runs on natural finish and interruption. */
   @Override
   protected void end(boolean interrupted) {
     drivetrain.setControl(new SwerveRequest.Idle());
-    LimelightHelpers.setPriorityTagID(camera, -1); // -1 = no priority, back to normal targeting
+    camera.setPriorityTagID(-1); // -1 = no priority, back to normal targeting
   }
 
   /**
-   * True when the camera's primary in-view tag is our {@link #targetTagId}. setPriorityTagID makes
-   * it the primary target when visible; this guards the case where it isn't (wrong tag or none), so
-   * we idle instead of aligning to the wrong tag.
+   * The robot's pose in our target tag's frame, or null when the camera doesn't currently see that
+   * tag. Searching the fiducial list for our ID (instead of trusting whichever tag the camera calls
+   * "primary") means we can never align to the wrong tag.
    */
-  private boolean onTargetTag() {
-    return (int) LimelightHelpers.getFiducialID(camera) == targetTagId;
+  private Pose3d readRobotInTag() {
+    if (!camera.hasTarget()) { // also false when the camera is disconnected or the frame is stale
+      return null;
+    }
+    for (FiducialTarget target : camera.getLatestResults().fiducialTargets) {
+      if (target.fiducialId == targetTagId) {
+        Pose3d pose = target.getRobotPose_TargetSpace();
+        // An all-zero pose means the camera hasn't filled target-space data for this tag yet.
+        return pose.equals(Pose3d.kZero) ? null : pose;
+      }
+    }
+    return null;
   }
 }

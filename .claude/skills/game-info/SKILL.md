@@ -48,13 +48,18 @@ Respect these as project conventions rather than re-deriving them:
 ## AprilTags / vision
 
 - The robot reads AprilTags only through **Limelights** (two cameras, NT names `"limelight-br"` /
-  `"limelight-bl"`, registered in `Robot` via `Limelight.registerAll`) using
-  [LimelightHelpers](src/main/java/frc/robot/subsystems/vision/LimelightHelpers.java).
-  [Limelight.java](src/main/java/frc/robot/subsystems/vision/Limelight.java) fuses their AprilTag
-  pose estimates into the drivetrain's pose estimator.
+  `"limelight-bl"`), via the official **LimelightLib 2** vendordep (`com.limelightvision.Limelight`
+  objects owned as fields on `Robot`).
+  [Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) fuses their AprilTag pose
+  estimates into the drivetrain's pose estimator (`Vision.registerAll` in `Robot`).
   [DriveToTag](src/main/java/frc/robot/commands/DriveToTag.java) works in the **tag's frame**
-  (`getBotPose3d_TargetSpace`) and drives to the Limelight's configured POI standoff — so it is
-  **alliance-agnostic** (it doesn't care about field origin at all).
+  (`FiducialTarget.getRobotPose_TargetSpace()`) and drives to the Limelight's configured POI
+  standoff — so it is **alliance-agnostic** (it doesn't care about field origin at all).
+- **2027 Limelight coordinate convention (breaking vs 2026):** everything is unified NWU
+  right-handed. Target space is **+X out of the tag face, +Y to the tag's left, +Z up**, so a robot
+  parked facing the tag has yaw **±180°** in tag space, not 0 — `DriveToTag` drives yaw to π.
+  Camera firmware must be 2027.0+, and camera-side config (mount pitch/side signs, POI z-component)
+  must be re-entered per the migration guide.
 - There is **no vision in simulation** (no PhotonVision sim), so tag-based behavior can only be
   validated on real hardware. See the `run-sim` skill.
 - For canonical tag IDs / poses, use the season's WPILib `AprilTagFieldLayout` (not yet loaded in

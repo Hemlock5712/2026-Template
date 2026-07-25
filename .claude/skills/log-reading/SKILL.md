@@ -63,10 +63,13 @@ Also present, from `DriverStation.startDataLog` and WPILib itself:
 The first sample where the control word flips to enabled is the start of the active mode; `DS:opMode`
 tells you which OpMode it was.
 
-**Vision keys:** the robot does **not** republish Limelight data, but `DataLogManager` logs all NT,
-so if the real Limelights (`limelight-br` / `limelight-bl`) are connected their
-`/limelight-br/*` and `/limelight-bl/*` entries are captured. In **sim there is no Limelight**,
-so expect none.
+**Vision keys:** `DataLogManager` logs all NT, so with real Limelights (`limelight-br` /
+`limelight-bl`) connected you get: their raw `/limelight-br/*` / `/limelight-bl/*` entries
+(LimelightLib 2 publishes results as one atomic MessagePack blob per camera, not per-value
+topics); `/limelight_telemetry/*` — LimelightLib's auto-published accepted/rejected pose
+estimates (AdvantageScope-friendly); and `/limelightshared/robot_orientation_set` — the robot
+heading `DriveMechanism` broadcasts to all cameras at 250 Hz for MegaTag2. In **sim there is no
+Limelight**, so expect only `limelightshared` and empty `limelight_telemetry` topics.
 
 ## Reading `.wpilog` — AdvantageScope (interactive)
 

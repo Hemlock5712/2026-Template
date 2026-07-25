@@ -55,7 +55,7 @@ constructor taking `(Robot robot)` (or no args). Selecting a mode prints
 
 | File | Annotation | What it does |
 | --- | --- | --- |
-| [TeleopOpMode.java](src/main/java/frc/robot/opmodes/TeleopOpMode.java) | `@Teleop("Teleop")` | Driver experience. Xbox controller on port 0; field-centric swerve as the drivetrain default command. **LB** = reset field-centric heading; **LT** = `intake()`, **RB** = `score()`, **RT** = `stow()` (superstructure presets, `whileTrue`); **A** = `DriveToTag` align (camera `limelight-br`); **Y** = `autoScore()` (arm to scoring pose + flywheel spin-up; releasing **Y** stops the flywheel). |
+| [TeleopOpMode.java](src/main/java/frc/robot/opmodes/TeleopOpMode.java) | `@Teleop("Teleop")` | Driver experience. Xbox controller on port 0; field-centric swerve as the drivetrain default command. **LB** = reset field-centric heading; **LT** = `intake()`, **RB** = `score()`, **RT** = `stow()` (superstructure presets, `whileTrue`); **A** = `DriveToTag` align (camera `robot.limelightBR`); **Y** = `autoScore()` (arm to scoring pose + flywheel spin-up; releasing **Y** stops the flywheel). |
 | [StateMachineTeleop.java](src/main/java/frc/robot/opmodes/StateMachineTeleop.java) | `@Teleop("StateMachine Demo")` | **Optional advanced dialect.** The superstructure as a Commands-v3 `StateMachine`: named states (stowed/pickup/prep/scoring), `when(...)` / `whenComplete()` transitions, enter/exit hooks. No drive controls — a superstructure showcase. |
 | [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java) | `@Autonomous("Drive To Pose")` | Example routine: sequences two `DriveToPose` legs with `Command.sequence(...).named(...)`. The sequential group inherits its children's requirement (the drivetrain), and the scheduler hands the drivetrain off between legs. `start()` schedules the routine; `end()` cancels it. |
 | [DriveStowDriveChainedOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveChainedOpMode.java) | `@Autonomous("Drive Stow Drive (Chained)")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(isAtTarget)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
@@ -107,14 +107,19 @@ The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `Appl
 
 ### Vision
 
-- [vision/Limelight.java](src/main/java/frc/robot/subsystems/vision/Limelight.java) — one instance
-  per camera; feeds AprilTag pose estimates into the drivetrain's pose estimator
-  (`addVisionMeasurement`) with distance/tag-count-scaled std devs. MegaTag1 for 2+ tags, MegaTag2
-  for a lone tag (gyro heading — seed the gyro). `Limelight.registerAll(...)` in `Robot` wires the
-  cameras: **two Limelights, NT names `"limelight-br"` and `"limelight-bl"`**. Publishes no
-  telemetry yet.
-- [vision/LimelightHelpers.java](src/main/java/frc/robot/subsystems/vision/LimelightHelpers.java) —
-  vendored Limelight NT helper that `Limelight` and `DriveToTag` read through.
+- Cameras are **LimelightLib 2** vendordep objects (`com.limelightvision.Limelight`), owned as
+  `public final` fields on [Robot.java](src/main/java/frc/robot/Robot.java) like any other
+  hardware: **two Limelights, NT names `"limelight-br"` and `"limelight-bl"`**
+  (`robot.limelightBR` / `robot.limelightBL`).
+- [vision/Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) — feeds each
+  camera's AprilTag pose estimates into the drivetrain's pose estimator (`addVisionMeasurement`).
+  The library filters bad estimates and computes distance/tag-count-scaled std devs per
+  `PoseEstimateConfig`; `Vision` picks MegaTag1 for 2+ tags, MegaTag2 for a lone tag (gyro
+  heading — seed the gyro). `Vision.registerAll(...)` in `Robot` wires the cameras. The robot
+  heading MegaTag2 needs is broadcast to all cameras at odometry rate (250 Hz) from
+  `DriveMechanism`'s telemetry callback via `Limelight.setSharedRobotOrientation` (the
+  `limelightshared` NT table). The library auto-publishes accepted/rejected pose telemetry under
+  `limelight_telemetry`.
 
 There is **no PhotonVision and no vision sim**, so AprilTag-based commands see no targets in
 simulation (see the `run-sim` skill).
@@ -132,7 +137,7 @@ Two authoring styles coexist; pick whichever reads better. Both are Commands v3.
 | Command | Style | What it does |
 | --- | --- | --- |
 | [DriveToPose.java](src/main/java/frc/robot/commands/DriveToPose.java) | classic | Straight-line drive to a blue-origin `Pose2d` on **odometry**, via CTRE `LinearPath` (trapezoid profile feedforward) + per-axis PID feedback. The building block for autonomous. |
-| [DriveToTag.java](src/main/java/frc/robot/commands/DriveToTag.java) | classic | **Vision-only** align to an AprilTag using `LimelightHelpers.getBotPose3d_TargetSpace`; three `ProfiledPIDController`s drive the tag-frame offset to the Limelight's POI standoff. |
+| [DriveToTag.java](src/main/java/frc/robot/commands/DriveToTag.java) | classic | **Vision-only** align to an AprilTag using LimelightLib's `FiducialTarget.getRobotPose_TargetSpace()`; three `ProfiledPIDController`s drive the tag-frame offset to the Limelight's POI standoff (2027 tag frame: +X out of the tag face, +Y tag-left — facing the tag is yaw ±π). |
 | [DriveToTagInline.java](src/main/java/frc/robot/commands/DriveToTagInline.java) | inline | The same behavior as `DriveToTag`, written inline, kept as a reference example of the inline style. Not used by any OpMode. |
 
 ## Hardware constants — [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java)
@@ -168,8 +173,10 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
   `.wpilib/wpilib_preferences.json`.
 - **Java 25** source/target. Gradle must run on a Java 25 JDK (e.g. the WPILib 2027 toolchain JDK);
   an older JVM fails with `invalid source release: 25`.
-- Vendordeps: only [Phoenix6](vendordeps/Phoenix6-26.50.0-alpha-1.json) (`26.50.0-alpha-1`) and
-  [CommandsV3](vendordeps/CommandsV3.json) (`1.0.0`). No PathPlanner/Choreo/AdvantageKit/maple-sim/PhotonVision.
+- Vendordeps: [Phoenix6](vendordeps/Phoenix6-26.50.0-alpha-1.json) (`26.50.0-alpha-1`),
+  [CommandsV3](vendordeps/CommandsV3.json) (`1.0.0`), and
+  [LimelightLib](vendordeps/LimelightLib.json) (`2.0.0-beta2`, Java-only).
+  No PathPlanner/Choreo/AdvantageKit/maple-sim/PhotonVision.
 - Spotless (Google Java Format) runs on every `JavaCompile` (`dependsOn 'spotlessApply'`). Build/format
   from the WPILib VS Code extension or a Java-25 Gradle invocation.
 
@@ -187,6 +194,6 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 | Swerve constants / IDs / gains | [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) |
 | Telemetry → NT/WPILOG | [utils/Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java) |
 | Headless sim auto-enable | [utils/SimStartup.java](src/main/java/frc/robot/utils/SimStartup.java) |
-| Vision → pose estimator (per-camera) | [vision/Limelight.java](src/main/java/frc/robot/subsystems/vision/Limelight.java) |
-| Limelight NT helper (vendored) | [vision/LimelightHelpers.java](src/main/java/frc/robot/subsystems/vision/LimelightHelpers.java) |
+| Vision → pose estimator (per-camera) | [vision/Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) |
+| Limelight camera objects (hardware) | [Robot.java](src/main/java/frc/robot/Robot.java) (`limelightBR` / `limelightBL`, LimelightLib vendordep) |
 | TalonFX config helper | [utils/TalonFXUtil.java](src/main/java/frc/robot/utils/TalonFXUtil.java) |

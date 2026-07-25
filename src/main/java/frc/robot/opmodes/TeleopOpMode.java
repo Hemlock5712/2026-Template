@@ -30,10 +30,9 @@ import org.wpilib.opmode.Teleop;
  */
 @Teleop(name = "Teleop")
 public class TeleopOpMode extends PeriodicOpMode {
-  // Which Limelight to align with, and the AprilTag to align to. Must be one of the camera names
-  // registered in Robot's Limelight.registerAll(...). TODO: pick the camera that faces the scoring
-  // tag, and the real tag ID (flipped per alliance) once the game is wired - see game-info.
-  private static final String ALIGN_CAMERA = "limelight-br";
+  // Which AprilTag to auto-align to. The camera is one of the Limelight objects Robot owns
+  // (robot.limelightBR below). TODO: pick the camera that faces the scoring tag, and the real
+  // tag ID (flipped per alliance) once the game is wired - see game-info.
   private static final int ALIGN_TAG_ID = 1;
 
   private final double maxSpeed = TunerConstants.kSpeedAt12Volts.in(MetersPerSecond); // top speed
@@ -69,7 +68,7 @@ public class TeleopOpMode extends PeriodicOpMode {
     driver.rightTrigger().whileTrue(robot.stow()); // back to safe travel pose
 
     // Hold A: vision-only auto-align to the tag standoff.
-    driver.a().whileTrue(new DriveToTag(drivetrain, ALIGN_CAMERA, ALIGN_TAG_ID));
+    driver.a().whileTrue(new DriveToTag(drivetrain, robot.limelightBR, ALIGN_TAG_ID));
 
     // Hold Y: auto-score prep - raise the arm and spin up the flywheel together.
     driver.y().whileTrue(robot.autoScore()).whileFalse(robot.flywheel.stop());

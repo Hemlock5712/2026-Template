@@ -5,6 +5,7 @@
 package frc.robot.subsystems;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import com.limelightvision.Limelight;
 import frc.robot.generated.TunerConstants;
 import frc.robot.utils.Telemetry;
 import java.util.function.Supplier;
@@ -36,8 +37,19 @@ public class DriveMechanism extends Mechanism {
     super("Drivetrain");
     // The drivetrain's perspective update used to live in periodic(); run it every loop.
     Scheduler.getDefault().addPeriodic(drivetrain::applyOperatorPerspective);
-    // CTRE calls this from the odometry thread every time a new state is produced (250 Hz on FD).
-    drivetrain.registerTelemetry(telemetry::telemeterize);
+    // CTRE calls this from the odometry thread (250 Hz on FD): publish telemetry, and feed every
+    // Limelight the freshest heading + yaw rate (degrees, CCW+) for MegaTag2.
+    drivetrain.registerTelemetry(
+        state -> {
+          telemetry.telemeterize(state);
+          Limelight.setSharedRobotOrientation(
+              state.Pose.getRotation().getDegrees(),
+              Math.toDegrees(state.Velocity.omega),
+              0,
+              0,
+              0,
+              0);
+        });
   }
 
   /** Returns a command that continuously applies the supplied control request to the drivetrain. */
@@ -83,19 +95,15 @@ public class DriveMechanism extends Mechanism {
 
   /**
    * Fuses a vision pose estimate into the drivetrain's Kalman filter. Exposed so the {@link
-   * frc.robot.subsystems.vision.Limelight} pose estimator can correct odometry without direct
-   * access to the Phoenix swerve object.
+   * frc.robot.subsystems.vision.Vision} pose feeder can correct odometry without direct access to
+   * the Phoenix swerve object.
    *
-   * <p><b>Timebase:</b> the Phoenix pose estimator stamps its odometry buffer with {@code
-   * Utils.getCurrentTimeSeconds()}, so {@code timestampSeconds} must be in that same epoch.
-   * Limelight reports timestamps in the WPILib timebase ({@code Timer.getTimestamp()}); the {@code
-   * Limelight} subsystem converts before calling this. (Phoenix 6 dropped {@code
-   * Utils.fpgaToCurrentTime} in the 2027 line, so the conversion is done by sampling the offset
-   * there.)
+   * <p><b>Timebase:</b> Phoenix shares the WPILib timebase in the 2027 line (it dropped {@code
+   * Utils.fpgaToCurrentTime}), and LimelightLib stamps estimates in that same timebase, so {@code
+   * PoseEstimate.timestampSeconds} passes straight through - no conversion.
    *
    * @param visionRobotPose the robot pose measured by vision, blue-alliance-origin
-   * @param timestampSeconds measurement timestamp in the {@code Utils.getCurrentTimeSeconds()}
-   *     epoch
+   * @param timestampSeconds measurement timestamp in the WPILib timebase
    * @param stdDevs measurement standard deviations [x, y, theta]ᵀ (meters, radians)
    */
   public void addVisionMeasurement(

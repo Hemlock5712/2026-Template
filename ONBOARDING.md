@@ -51,11 +51,10 @@ comfortable:
 
 - `subsystems/DriveMechanism.java` — the swerve wrapper.
 - `commands/DriveToPose.java`, `commands/DriveToTag.java` — drive to a field pose / to an AprilTag.
-- `subsystems/vision/Limelight.java` — feeds AprilTag pose estimates from the cameras into the
-  drivetrain's pose estimator.
+- `subsystems/vision/Vision.java` — feeds AprilTag pose estimates from the cameras (LimelightLib
+  vendordep) into the drivetrain's pose estimator.
 - `subsystems/CommandSwerveDrivetrain.java`, `generated/TunerConstants.java`,
-  `utils/Telemetry.java`, `subsystems/vision/LimelightHelpers.java` — generated or vendored
-  infrastructure you rarely edit by hand.
+  `utils/Telemetry.java` — generated infrastructure you rarely edit by hand.
 
 ## If you know `RobotContainer`, here's the map
 

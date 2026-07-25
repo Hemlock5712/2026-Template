@@ -5,10 +5,11 @@
 package frc.robot;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import com.limelightvision.Limelight;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
-import frc.robot.subsystems.vision.Limelight;
+import frc.robot.subsystems.vision.Vision;
 import frc.robot.utils.SimStartup;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
@@ -36,6 +37,12 @@ public class Robot extends OpModeRobot {
   public final Arm arm = new Arm();
   public final Flywheel flywheel = new Flywheel();
 
+  /* Vision hardware: one LimelightLib object per camera, constructed with the camera's NT name.
+   * Owned here like any other hardware - Vision.registerAll wires them into the pose estimator,
+   * and an OpMode can hand one to DriveToTag (robot.limelightBR) to align to a tag. */
+  public final Limelight limelightBR = new Limelight("limelight-br");
+  public final Limelight limelightBL = new Limelight("limelight-bl");
+
   public Robot() {
     // Start on-robot logging. There is no AdvantageKit in this template; the "logging-only" story
     // is DataLogManager - it records every NetworkTables value change (including everything
@@ -50,8 +57,8 @@ public class Robot extends OpModeRobot {
     final var idle = new SwerveRequest.Idle();
     RobotModeTriggers.disabled().whileTrue(drivetrain.applyRequest(() -> idle));
 
-    // Vision: wire up every Limelight in one call (names must match each camera's NT name).
-    Limelight.registerAll(drivetrain, "limelight-br", "limelight-bl");
+    // Vision: wire up every Limelight in one call.
+    Vision.registerAll(drivetrain, limelightBR, limelightBL);
   }
 
   @Override

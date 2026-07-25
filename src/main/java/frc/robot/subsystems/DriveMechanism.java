@@ -37,15 +37,18 @@ public class DriveMechanism extends Mechanism {
     super("Drivetrain");
     // The drivetrain's perspective update used to live in periodic(); run it every loop.
     Scheduler.getDefault().addPeriodic(drivetrain::applyOperatorPerspective);
-    // CTRE calls this from the odometry thread every time a new state is produced (250 Hz on FD).
-    // Besides publishing telemetry, feed the fresh heading to every Limelight for MegaTag2: one
-    // shared NT write covers all cameras (the `limelightshared` table), and running it here
-    // instead of the 50 Hz robot loop keeps the heading the cameras fuse ~4 ms old instead of
-    // ~20 ms - which matters while rotating. The library rate-limits the network flush.
+    // CTRE calls this from the odometry thread (250 Hz on FD): publish telemetry, and feed every
+    // Limelight the freshest heading + yaw rate (degrees, CCW+) for MegaTag2.
     drivetrain.registerTelemetry(
         state -> {
           telemetry.telemeterize(state);
-          Limelight.setSharedRobotOrientation(state.Pose.getRotation().getDegrees());
+          Limelight.setSharedRobotOrientation(
+              state.Pose.getRotation().getDegrees(),
+              Math.toDegrees(state.Velocity.omega),
+              0,
+              0,
+              0,
+              0);
         });
   }
 

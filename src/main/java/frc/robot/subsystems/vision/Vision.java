@@ -31,6 +31,27 @@ public class Vision {
   // How far away tags are still trusted; past this they are too noisy to help.
   private static final double MAX_TAG_DISTANCE_METERS = 4.0;
 
+  /*
+   * How the library turns a config into an estimate's std devs (the "trust numbers" the pose
+   * estimator wants - SMALLER = trust vision MORE). Per accepted estimate it computes:
+   *
+   *   scale = d ^ distanceExponent / n ^ tagCountExponent
+   *
+   *   xy    = clamp(baseXY    * scale, 0.0001 m, max)    [meters]
+   *   theta = clamp(baseTheta * scale, 0.01 rad, max)    [radians]
+   *
+   * where d = average distance to the tags (meters) and n = how many field-mapped tags it saw.
+   * The default exponents are 1 and 0.5, so trust falls off linearly with distance and improves
+   * with sqrt(tag count). With the two configs below that works out to:
+   *
+   *   MT1 (2+ tags):  xy = 0.5 * d / sqrt(n)     theta = 1.5 * d / sqrt(n)
+   *   MT2 (any tag):  xy = 0.3 * d / sqrt(n)     theta = 9999999 (gyro owns heading)
+   *
+   * The knobs: withStdDevXY / withStdDevTheta set the base (and optionally the clamps),
+   * withStdDevDistanceScaling sets the distance exponent, withStdDevTagCountDivision the tag-count
+   * exponent. An estimate with no distance data comes back untrusted (9999999) on all three axes.
+   */
+
   // MegaTag1 solves position AND heading from the tags alone - only trustworthy with 2+ tags.
   // withStdDevTheta sets how much to trust that heading (the library default is "not at all").
   private static final PoseEstimateConfig MT1_CONFIG =

@@ -10,15 +10,21 @@ import org.wpilib.hardware.hal.RobotMode;
 import org.wpilib.simulation.DriverStationSim;
 
 /**
- * Headless sim auto-enable: lets an agent/CI run start the robot without a human clicking Enable.
- * {@link frc.robot.Robot#simulationInit()} calls {@link #arm()}, which reads the {@code
- * frc.sim.startMode} system property (see the run-sim skill) and drives the sim driver station.
+ * Headless sim auto-enable: starts the robot without a human clicking Enable. See the run-sim
+ * skill.
  *
- * <p>Values: {@code auto} / {@code teleop} / {@code utility} (first OpMode of that kind), {@code
- * <mode>:<OpMode name>} to pick one by name, or empty/{@code disabled} to stay disabled.
+ * <p>{@code frc.sim.startMode} values: {@code auto} / {@code teleop} / {@code utility} for that
+ * kind's default OpMode, {@code <mode>:<OpMode name>} to pick one by name, or empty/{@code
+ * disabled} to stay disabled.
  */
 public final class SimStartup {
   private SimStartup() {}
+
+  // Which OpMode a bare "-Pmode=auto" (or teleop, or utility) starts. Named on purpose: picking
+  // "whichever OpMode is first" lets a newly added class silently take over the default run.
+  private static final String DEFAULT_AUTONOMOUS = "3 - Drive Stow Drive";
+  private static final String DEFAULT_TELEOP = "Teleop";
+  private static final String DEFAULT_UTILITY = "Stow";
 
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
   public static void arm() {
@@ -53,28 +59,63 @@ public final class SimStartup {
       return;
     }
 
+    boolean askedByName = wantName != null;
+    if (!askedByName) {
+      wantName =
+          switch (mode) {
+            case AUTONOMOUS -> DEFAULT_AUTONOMOUS;
+            case TELEOPERATED -> DEFAULT_TELEOP;
+            case UTILITY -> DEFAULT_UTILITY;
+            default -> null;
+          };
+    }
+
     OpModeOption chosen = null;
+    OpModeOption firstOfMode = null;
+    StringBuilder available = new StringBuilder();
     for (OpModeOption option : DriverStationSim.getOpModeOptions()) {
       if (option.getMode() != mode) {
         continue;
       }
-      if (wantName == null || option.name.equalsIgnoreCase(wantName)) {
-        chosen = option;
-        break;
+      if (firstOfMode == null) {
+        firstOfMode = option;
       }
+      if (available.length() > 0) {
+        available.append(", ");
+      }
+      available.append('"').append(option.name).append('"');
+      if (chosen == null && option.name.equalsIgnoreCase(wantName)) {
+        chosen = option;
+      }
+    }
+
+    // Default renamed or deleted: complain loudly but still run something, so a CI loop never
+    // just sits there disabled.
+    if (chosen == null && !askedByName && firstOfMode != null) {
+      System.err.println(
+          "[SimStartup] Default "
+              + mode
+              + " OpMode \""
+              + wantName
+              + "\" not found - was it renamed? Update SimStartup. Falling back to \""
+              + firstOfMode.name
+              + "\". Available: "
+              + available);
+      chosen = firstOfMode;
     }
     if (chosen == null) {
       System.err.println(
           "[SimStartup] No "
               + mode
-              + " OpMode"
-              + (wantName != null ? " named \"" + wantName + "\"" : "")
-              + " found; staying disabled.");
+              + " OpMode named \""
+              + wantName
+              + "\" found; staying disabled. Available: "
+              + available);
       return;
     }
 
-    // Both setRobotMode and setOpMode are required - the opmode id the framework reads back
-    // combines the two, and it won't match without the mode bits.
+    // Both setRobotMode and setOpMode are required - the opmode id combines the two and won't
+    // match without the mode bits.
     DriverStationSim.setDsAttached(true);
     DriverStationSim.setRobotMode(mode);
     DriverStationSim.setOpMode(chosen.id);

@@ -23,8 +23,7 @@ import org.wpilib.math.trajectory.TrapezoidProfile;
  * LL web UI), so this command just drives the measured distance to zero.
  *
  * <p>Classic-style Commands v3 command on {@link ClassicCommand}: the familiar {@code
- * initialize/execute/isFinished/end} hooks. {@link DriveToTagInline} is the same command written as
- * one coroutine body - compare the two styles.
+ * initialize/execute/isFinished/end} hooks.
  */
 public class DriveToTag extends ClassicCommand {
   private final DriveMechanism drivetrain;
@@ -33,9 +32,8 @@ public class DriveToTag extends ClassicCommand {
   private final Limelight camera;
   private final int targetTagId;
 
-  // One trapezoidal PID per axis; the profile inside each limits speed and acceleration. kP is 0:
-  // the feedforward in execute() does the work, PID only corrects drift. TODO: tune the limits
-  // and kP.
+  // One trapezoidal PID per axis; the profile limits speed and acceleration. kP is 0 - the
+  // feedforward in execute() does the work. TODO: tune the limits and kP.
   private final ProfiledPIDController distance =
       new ProfiledPIDController(0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(2.5, 3.0));
   private final ProfiledPIDController lateral =
@@ -62,13 +60,9 @@ public class DriveToTag extends ClassicCommand {
     heading.setTolerance(Math.toRadians(2.0)); // radians
   }
 
-  /**
-   * Seeds the profiles to the current measurement so the approach starts from a standstill. No tag
-   * in view? Skip it - {@link #execute} holds still until the tag appears.
-   */
+  /** Seeds the profiles to the current measurement so the approach starts from a standstill. */
   @Override
   protected void initialize() {
-    // Make our tag the camera's primary target.
     camera.setPriorityTagID(targetTagId);
 
     robotInTag = readRobotInTag();
@@ -96,7 +90,7 @@ public class DriveToTag extends ClassicCommand {
     double measuredLateral = robotInTag.getY();
     double measuredYaw = robotInTag.getRotation().getZ();
 
-    // PID + profile-velocity feedforward: the feedforward does the work, PID corrects drift.
+    // PID + profile-velocity feedforward.
     double vx = distance.calculate(measuredDistance, 0.0) + distance.getSetpoint().velocity;
     double vy = lateral.calculate(measuredLateral, 0.0) + lateral.getSetpoint().velocity;
     double omega = heading.calculate(measuredYaw, Math.PI) + heading.getSetpoint().velocity;
@@ -108,8 +102,7 @@ public class DriveToTag extends ClassicCommand {
   }
 
   /**
-   * Done when we see our tag AND all three controllers are at-goal. The visibility check matters: a
-   * fresh controller reports at-goal before its first calculate().
+   * The visibility check matters: a fresh controller reports at-goal before its first calculate().
    */
   @Override
   protected boolean isFinished() {

@@ -4,7 +4,6 @@
 
 package frc.robot;
 
-import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.limelightvision.Limelight;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
@@ -17,7 +16,6 @@ import org.littletonrobotics.junction.networktables.NT4Publisher;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
-import org.wpilib.command3.button.RobotModeTriggers;
 import org.wpilib.framework.OpModeRobot;
 
 /**
@@ -47,9 +45,7 @@ public class Robot extends OpModeRobot {
     Logger.start();
     AutoLogOutputManager.addObject(this);
 
-    // Brake while disabled, in every mode. Made here so the binding survives OpMode switches.
-    final var idle = new SwerveRequest.Idle();
-    RobotModeTriggers.disabled().whileTrue(drivetrain.applyRequest(() -> idle));
+    // Always-on bindings go here - they survive OpMode switches. (None needed yet.)
 
     Vision.registerAll(drivetrain, limelightBR, limelightBL);
   }
@@ -70,8 +66,8 @@ public class Robot extends OpModeRobot {
   }
 
   // ---------------------------------------------------------------------------
-  // Superstructure: one method per robot "pose" so an OpMode can just call
-  // robot.stow(). Each runs the arm and flywheel in parallel and requires both.
+  // Superstructure: one method per robot "pose", each moving the arm and
+  // flywheel in parallel, so an OpMode can just call robot.stow().
   // ---------------------------------------------------------------------------
 
   /** Stow for travel: arm vertical, flywheel stopped. Holds forever - never wait on it. */

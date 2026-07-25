@@ -5,7 +5,6 @@
 package frc.robot.subsystems;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
-import com.limelightvision.Limelight;
 import frc.robot.generated.TunerConstants;
 import frc.robot.utils.Telemetry;
 import java.util.function.Supplier;
@@ -36,30 +35,11 @@ public class DriveMechanism extends Mechanism {
     Scheduler.getDefault().addPeriodic(drivetrain::applyOperatorPerspective);
     // Log once per loop - AdvantageKit logging must run on the main loop.
     Scheduler.getDefault().addPeriodic(() -> telemetry.telemeterize(drivetrain.getState()));
-    // Runs on the fast odometry thread: feed every Limelight the robot heading + yaw rate
-    // (degrees, CCW+) for MegaTag2.
-    drivetrain.registerTelemetry(
-        state ->
-            Limelight.setSharedRobotOrientation(
-                state.Pose.getRotation().getDegrees(),
-                Math.toDegrees(state.Velocity.omega),
-                0,
-                0,
-                0,
-                0));
   }
 
   /** Returns a command that continuously applies the supplied control request to the drivetrain. */
   public Command applyRequest(Supplier<SwerveRequest> request) {
     return runRepeatedly(() -> drivetrain.setControl(request.get())).named("applyRequest");
-  }
-
-  /** Resets the field-centric heading so "forward" matches the driver's current facing. */
-  public Command seedFieldCentric() {
-    return run(coroutine -> {
-          drivetrain.seedFieldCentric();
-        })
-        .named("seedFieldCentric");
   }
 
   /** Applies a swerve request directly - for commands that already require this mechanism. */

@@ -18,23 +18,22 @@ import org.wpilib.opmode.Teleop;
  * The superstructure run as a {@link StateMachine} - the lesson at <a
  * href="https://frc5712.com/state-based">frc5712.com/state-based</a> as real code.
  *
- * <p>Unlike {@link TeleopOpMode} (buttons hold presets), here the robot is always in exactly one
- * named state, and buttons/sensors move it between states. The machine swaps the commands for you;
- * illegal jumps don't exist because no transition was declared for them.
+ * <p>Unlike {@link TeleopOpMode} (buttons hold presets), the robot is always in exactly one named
+ * state, and only the declared transitions can happen.
  *
  * <p>Build in four steps (numbered below). No drive controls here - select "Teleop" for driving.
  */
-@Teleop(name = "StateMachine Demo")
+@Teleop(name = "State Machine (no driving)")
 public class StateMachineTeleop extends PeriodicOpMode {
   private final CommandNiDsXboxController driver = new CommandNiDsXboxController(0);
   private final Command machine;
 
   public StateMachineTeleop(Robot robot) {
-    // 1. Construct - the name is required and shows up in telemetry.
+    // 1. Construct - the name shows up in telemetry.
     StateMachine sm = new StateMachine("Superstructure");
 
-    // 2. Add states - each owns one command. Holds are fine here: when(...) transitions CANCEL
-    //    the old state's command. Prep uses .until(...) so it can finish - see whenComplete below.
+    // 2. Add states - each owns one command. Holds are fine: a when(...) transition CANCELS the
+    //    old state's command.
     State stowed = sm.addState(robot.stow());
     State pickup = sm.addState(robot.intake());
     State prep =
@@ -46,29 +45,27 @@ public class StateMachineTeleop extends PeriodicOpMode {
     sm.setInitialState(stowed);
 
     // 4. Wire transitions. when(...) is checked every tick and fires on false -> true.
-    stowed.switchTo(pickup).when(driver.leftTrigger()); // driver asks to intake
-    pickup.switchTo(prep).when(robot.arm::isAtTarget); // on a real robot: a game-piece
-    // sensor, not the arm angle
+    stowed.switchTo(pickup).when(driver.leftTrigger());
+    pickup.switchTo(prep).when(robot.arm::isAtTarget); // real robot: a game-piece sensor
 
     // prep's command finishes on its own, so use whenComplete() instead of when(...).
     prep.switchTo(scoring).whenComplete();
 
-    scoring.switchTo(stowed).when(driver.rightTrigger()); // shot taken - pack up
+    scoring.switchTo(stowed).when(driver.rightTrigger());
 
-    // B = "get safe now" from any state. switchFromAny() covers states added so far - last!
+    // B = "get safe now". switchFromAny() only covers states added so far - declare it last!
     sm.switchFromAny().to(stowed).when(driver.b());
 
-    // onEnter/onExit hooks: this logs a true/false trace of when the machine was in Scoring
-    // (see the log-reading skill).
+    // onEnter/onExit hooks - logs a true/false trace of time spent in Scoring.
     scoring.onEnter(() -> Logger.recordOutput("Superstructure/Scoring", true));
     scoring.onExit(() -> Logger.recordOutput("Superstructure/Scoring", false));
 
     // More power, when you need it (uncomment and adapt):
     //
-    // whenCompleteAnd = whenComplete + an extra check:
-    //   prep.switchTo(stowed).whenCompleteAnd(() -> !hasGamePiece()); // lost the piece - bail
+    // whenComplete + an extra check:
+    //   prep.switchTo(stowed).whenCompleteAnd(() -> !hasGamePiece());
     //
-    // Pick the target at transition time (Supplier<State>):
+    // Pick the target at transition time:
     //   prep.switchTo(() -> hasGamePiece() ? scoring : stowed).whenComplete();
     //
     // End the whole machine instead of switching:

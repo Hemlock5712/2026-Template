@@ -32,6 +32,9 @@ public class Vision {
   // distance squared (farther tags look smaller); more tags average the noise down.
   private static final double XY_STD_DEV = 0.15;
 
+  // Spin faster than this (1 full turn per second) and we stop trusting MegaTag2. See update().
+  private static final double MAX_SPIN_FOR_MT2_RAD_PER_SEC = 2 * Math.PI;
+
   // MegaTag1 solves position from the tags alone - trustworthy with 2+ tags.
   private static final PoseEstimateConfig MT1_CONFIG =
       PoseEstimateConfig.defaultMT1()
@@ -57,9 +60,26 @@ public class Vision {
 
   /** Wires every camera: apply the trust configs and run each camera's update every loop. */
   public static void registerAll(DriveMechanism drivetrain, Limelight... cameras) {
+    // MegaTag2 needs to know which way we're facing, so send every camera our heading (degrees,
+    // CCW+). One call covers all of them - see setUseSharedOrientation below.
+    //
+    // ORDER MATTERS: these run in the order registered, so send the heading BEFORE reading the
+    // cameras. And keep it at 50 Hz - this call ends in a full NetworkTables flush, which is far
+    // too expensive for the fast odometry thread.
+    Scheduler.getDefault()
+        .addPeriodic(
+            () ->
+                Limelight.setSharedRobotOrientation(
+                    drivetrain.getPose().getRotation().getDegrees(),
+                    Math.toDegrees(drivetrain.getFieldVelocity().omega),
+                    0,
+                    0,
+                    0,
+                    0));
+
     for (Limelight camera : cameras) {
       camera.withPoseEstimateConfig_MT1(MT1_CONFIG).withPoseEstimateConfig_MT2(MT2_CONFIG);
-      camera.setUseSharedOrientation(true); // heading comes from DriveMechanism's shared feed
+      camera.setUseSharedOrientation(true); // heading comes from the shared feed above
       Vision vision = new Vision(camera, drivetrain);
       Scheduler.getDefault().addPeriodic(vision::update);
     }
@@ -67,10 +87,15 @@ public class Vision {
 
   /** Runs one vision update: every new camera frame becomes one pose-estimator measurement. */
   private void update() {
+    // Spinning fast means the heading we sent is stale by the time the camera solves the frame,
+    // so MegaTag2 answers get smeared. MegaTag1 ignores our heading, so it stays trustworthy.
+    boolean spinningTooFast =
+        Math.abs(drivetrain.getFieldVelocity().omega) > MAX_SPIN_FOR_MT2_RAD_PER_SEC;
+
     for (LimelightResults frame : camera.readResultsQueue()) {
       // Try MegaTag1 first (2+ tags); fall back to MegaTag2 for a lone tag.
       PoseEstimate estimate = camera.getPoseEstimate(frame, PoseEstimateType.MT1_WPIBLUE);
-      if (!estimate.isValid()) {
+      if (!estimate.isValid() && !spinningTooFast) {
         estimate = camera.getPoseEstimate(frame, PoseEstimateType.MT2_WPIBLUE);
       }
       if (estimate.isValid()) {

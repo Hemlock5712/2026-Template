@@ -4,6 +4,7 @@ import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveDrivetrainConstants;
 import com.ctre.phoenix6.swerve.SwerveModuleConstants;
 import frc.robot.generated.TunerConstants.TunerSwerveDrivetrain;
+import frc.robot.utils.RunMode;
 import org.wpilib.driverstation.Alliance;
 import org.wpilib.driverstation.MatchState;
 import org.wpilib.driverstation.RobotState;
@@ -36,7 +37,8 @@ public class CommandSwerveDrivetrain extends TunerSwerveDrivetrain {
   public CommandSwerveDrivetrain(
       SwerveDrivetrainConstants drivetrainConstants, SwerveModuleConstants<?, ?, ?>... modules) {
     super(drivetrainConstants, modules);
-    if (Utils.isSimulation()) {
+    // Not isSimulation(): true during replay too, where the log supplies the drivetrain state.
+    if (RunMode.current() == RunMode.SIM) {
       startSimThread();
     }
   }

@@ -7,7 +7,6 @@ package frc.robot.subsystems.arm;
 import static org.wpilib.units.Units.Degrees;
 import static org.wpilib.units.Units.Rotations;
 
-import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVoltage;
@@ -17,6 +16,7 @@ import com.ctre.phoenix6.signals.GravityTypeValue;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import frc.robot.generated.TunerConstants;
+import frc.robot.utils.RunMode;
 import frc.robot.utils.TalonFXUtil;
 import org.littletonrobotics.junction.AutoLogOutput;
 import org.wpilib.command3.Command;
@@ -80,7 +80,9 @@ public class Arm extends Mechanism {
 
     TalonFXUtil.applyConfigWithRetries(motor, config);
 
-    if (Utils.isSimulation()) {
+    // Not isSimulation(): that is also true during replay, where the log supplies the sensor
+    // values and re-running the physics would fight it.
+    if (RunMode.current() == RunMode.SIM) {
       Scheduler.getDefault().addPeriodic(this::updateSimulation);
     }
   }
@@ -147,6 +149,9 @@ public class Arm extends Mechanism {
   }
 
   private void setPosition(double rotations) {
+    if (RunMode.current() == RunMode.REPLAY) {
+      return;
+    }
     motor.setControl(positionOut.withPosition(rotations));
   }
 

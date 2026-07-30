@@ -4,7 +4,6 @@
 
 package frc.robot.utils;
 
-import org.wpilib.framework.RobotBase;
 import org.wpilib.hardware.hal.OpModeOption;
 import org.wpilib.hardware.hal.RobotMode;
 import org.wpilib.simulation.DriverStationSim;
@@ -28,7 +27,9 @@ public final class SimStartup {
 
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
   public static void arm() {
-    if (!RobotBase.isSimulation()) {
+    // REPLAY is also "simulation", but there the DS state comes from the log - enabling it here
+    // would overwrite the very inputs we are replaying.
+    if (RunMode.current() != RunMode.SIM) {
       return;
     }
 

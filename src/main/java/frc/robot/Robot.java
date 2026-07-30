@@ -9,10 +9,13 @@ import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
 import frc.robot.subsystems.vision.Vision;
+import frc.robot.utils.RunMode;
 import frc.robot.utils.SimStartup;
 import org.littletonrobotics.junction.AutoLogOutputManager;
+import org.littletonrobotics.junction.LogFileUtil;
 import org.littletonrobotics.junction.Logger;
 import org.littletonrobotics.junction.networktables.NT4Publisher;
+import org.littletonrobotics.junction.wpilog.WPILOGReader;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
@@ -39,11 +42,24 @@ public class Robot extends OpModeRobot {
     // AdvantageKit logging: .wpilog file (./logs in sim, USB on the robot) plus live
     // NetworkTables for AdvantageScope. See the log-reading skill.
     Logger.recordMetadata("ProjectName", "2027-Template");
-    Logger.addDataReceiver(new WPILOGWriter());
-    Logger.addDataReceiver(new NT4Publisher());
+    if (RunMode.current() == RunMode.REPLAY) {
+      // Inputs come from the old log; outputs go to a sibling "_replay" file to diff against it.
+      Logger.setReplaySource(new WPILOGReader(RunMode.replayLog()));
+      Logger.addDataReceiver(
+          new WPILOGWriter(LogFileUtil.addPathSuffix(RunMode.replayLog(), "_replay")));
+    } else {
+      Logger.addDataReceiver(new WPILOGWriter());
+      Logger.addDataReceiver(new NT4Publisher());
+    }
     Logger.AdvancedHooks.disableRobotBaseCheck(); // we extend OpModeRobot, not LoggedRobot
     Logger.start();
     AutoLogOutputManager.addObject(this);
+
+    // Must come after Logger.start(): replay reads one log entry per loop, so let the loop run as
+    // fast as the CPU allows instead of at 20 ms of wall clock.
+    if (RunMode.current() == RunMode.REPLAY) {
+      RunMode.startFastClock();
+    }
 
     // Always-on bindings go here - they survive OpMode switches. (None needed yet.)
 

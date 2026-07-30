@@ -101,7 +101,9 @@ test {
 //   ./gradlew simulateJava -Pheadless -Pmode=auto  -> same headless behavior on the base task
 // SimStartup.java reads the frc.sim.startMode system property wired below; see the run-sim skill.
 def runningAgentSim = gradle.startParameter.taskNames.any { it.endsWith('simulateJavaAgent') }
-def headless = runningAgentSim || project.hasProperty('headless')
+// Replay: ./gradlew replayJava -Preplay=logs/akit_<stamp>.wpilog  (see the run-replay skill)
+def replayLog = (project.findProperty('replay') ?: '').toString()
+def headless = runningAgentSim || replayLog || project.hasProperty('headless')
 
 // In headless mode, skip the Swing GUI and the socket DriverStation so nothing competes with the
 // programmatic enable that SimStartup performs via DriverStationSim.
@@ -115,6 +117,9 @@ if (!headless) {
 def simStartMode = (project.findProperty('mode') ?: (runningAgentSim ? 'auto' : '')).toString()
 tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach {
     systemProperty 'frc.sim.startMode', simStartMode
+    if (replayLog) {
+        systemProperty 'frc.replay', file(replayLog).absolutePath
+    }
 }
 
 // Convenience alias: simulateJavaAgent == simulateJava with the headless wiring above (which keys
@@ -122,6 +127,18 @@ tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach
 tasks.register('simulateJavaAgent') {
     group = 'GradleRIO'
     description = 'Run headless simulation and auto-enable the robot (see the run-sim skill).'
+    dependsOn 'simulateJava'
+}
+
+// Replay a recorded log through the current code. Writes <log>_replay.wpilog next to the input.
+tasks.register('replayJava') {
+    group = 'GradleRIO'
+    description = 'Replay a .wpilog through this code: ./gradlew replayJava -Preplay=<log>'
+    doFirst {
+        if (!replayLog) {
+            throw new GradleException('replayJava needs -Preplay=<path to .wpilog>')
+        }
+    }
     dependsOn 'simulateJava'
 }
 

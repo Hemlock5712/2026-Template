@@ -6,13 +6,13 @@ package frc.robot.subsystems.flywheel;
 
 import static org.wpilib.units.Units.RotationsPerSecond;
 
-import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
 import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import frc.robot.generated.TunerConstants;
+import frc.robot.utils.RunMode;
 import frc.robot.utils.TalonFXUtil;
 import org.littletonrobotics.junction.AutoLogOutput;
 import org.wpilib.command3.Command;
@@ -57,7 +57,9 @@ public class Flywheel extends Mechanism {
     // forever, so without this, letting go of the shoot button leaves the wheel spinning.
     setDefaultCommand(stop());
 
-    if (Utils.isSimulation()) {
+    // Not isSimulation(): that is also true during replay, where the log supplies the sensor
+    // values and re-running the physics would fight it.
+    if (RunMode.current() == RunMode.SIM) {
       Scheduler.getDefault().addPeriodic(this::updateSimulation);
     }
   }
@@ -89,6 +91,9 @@ public class Flywheel extends Mechanism {
   }
 
   private void setVelocity(double rps) {
+    if (RunMode.current() == RunMode.REPLAY) {
+      return;
+    }
     motor.setControl(velocityOut.withVelocity(RotationsPerSecond.of(rps)));
   }
 

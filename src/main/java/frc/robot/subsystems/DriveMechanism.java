@@ -6,6 +6,7 @@ package frc.robot.subsystems;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import frc.robot.generated.TunerConstants;
+import frc.robot.utils.RunMode;
 import frc.robot.utils.Telemetry;
 import java.util.function.Supplier;
 import org.wpilib.command3.Command;
@@ -39,11 +40,14 @@ public class DriveMechanism extends Mechanism {
 
   /** Returns a command that continuously applies the supplied control request to the drivetrain. */
   public Command applyRequest(Supplier<SwerveRequest> request) {
-    return runRepeatedly(() -> drivetrain.setControl(request.get())).named("applyRequest");
+    return runRepeatedly(() -> setControl(request.get())).named("applyRequest");
   }
 
   /** Applies a swerve request directly - for commands that already require this mechanism. */
   public void setControl(SwerveRequest request) {
+    if (RunMode.current() == RunMode.REPLAY) {
+      return;
+    }
     drivetrain.setControl(request);
   }
 

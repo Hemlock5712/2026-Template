@@ -55,10 +55,10 @@ public class Robot extends OpModeRobot {
     Logger.start();
     AutoLogOutputManager.addObject(this);
 
-    // Must come after Logger.start(): replay reads one log entry per loop, so let the loop run as
-    // fast as the CPU allows instead of at 20 ms of wall clock.
+    // Replay reads one log entry per loop, so let the loop run as fast as the CPU allows instead
+    // of sleeping 20 ms of wall clock between cycles.
     if (RunMode.current() == RunMode.REPLAY) {
-      RunMode.startFastClock();
+      setUseTiming(false);
     }
 
     // Always-on bindings go here - they survive OpMode switches. (None needed yet.)

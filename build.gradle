@@ -119,6 +119,16 @@ tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach
     systemProperty 'frc.sim.startMode', simStartMode
     if (replayLog) {
         systemProperty 'frc.replay', file(replayLog).absolutePath
+        // Put our classes ahead of the fat jar so src/main/java/org/wpilib/** overrides the stock
+        // wpilibj classes. mainClass must be set too: GradleRIO normally relies on the jar
+        // manifest, and that stops working once the jar is no longer first on the classpath.
+        classpath = files(sourceSets.main.output) + classpath
+        mainClass = ROBOT_MAIN_CLASS
+    }
+    // -Pjfr on any sim/replay run: record a Java Flight Recorder profile to build/replay.jfr
+    if (project.hasProperty('jfr')) {
+        jvmArgs "-XX:StartFlightRecording=settings=profile,filename=${buildDir}/replay.jfr,dumponexit=true",
+                '-XX:FlightRecorderOptions=stackdepth=128'
     }
 }
 
@@ -187,3 +197,4 @@ spotless {
 tasks.withType(JavaCompile).configureEach {
     dependsOn 'spotlessApply'
 }
+

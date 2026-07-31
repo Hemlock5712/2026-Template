@@ -29,6 +29,8 @@ public class DriveToTag extends ClassicCommand {
   private final DriveMechanism drivetrain;
 
   // Which camera to read and which AprilTag to align to.
+  // DOES NOT REPLAY: target-space reads come from NetworkTables, not the log. Fine for a
+  // live driver assist; add the targets to LoggedLimelight's inputs to replay this.
   private final Limelight camera;
   private final int targetTagId;
 

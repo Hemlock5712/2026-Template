@@ -204,7 +204,7 @@ tasks.withType(JavaCompile).configureEach {
 
 // Replay guard: a Phoenix object read directly bypasses the log and silently stops replaying.
 // Every device must go through a wrapper in frc/robot/hardware. See the run-replay skill.
-def loggedDeviceTypes = ['TalonFX', 'CANcoder', 'CANrange', 'Pigeon2', 'CANdi', 'CANdle']
+def loggedDeviceTypes = ['TalonFX', 'CANcoder', 'CANrange', 'Pigeon2', 'CANdi', 'CANdle', 'Limelight']
 
 tasks.register('checkReplaySafety') {
     group = 'verification'

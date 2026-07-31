@@ -4,8 +4,8 @@
 
 package frc.robot;
 
-import com.limelightvision.Limelight;
 import frc.robot.hardware.LoggedHardware;
+import frc.robot.hardware.LoggedLimelight;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
@@ -36,8 +36,8 @@ public class Robot extends OpModeRobot {
 
   /* One Limelight per camera, named by its NT name. Vision.registerAll wires them into the pose
    * estimator; an OpMode can also hand one to DriveToTag. */
-  public final Limelight limelightBR = new Limelight("limelight-br");
-  public final Limelight limelightBL = new Limelight("limelight-bl");
+  public final LoggedLimelight limelightBR = new LoggedLimelight("limelight-br");
+  public final LoggedLimelight limelightBL = new LoggedLimelight("limelight-bl");
 
   public Robot() {
     // AdvantageKit logging: .wpilog file (./logs in sim, USB on the robot) plus live

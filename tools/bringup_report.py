@@ -92,9 +92,9 @@ ANGLE_ROT = "/Hardware/CANcoder/Arm/PositionRot"
 ARM_KEYS = [
     ENABLED,
     ANGLE_ROT,
-    "/RealOutputs/BringUp/Arm/BestMeasuredRatio",
+    "/RealOutputs/BringUp/Arm/MeasuredRatio",
     "/RealOutputs/BringUp/Arm/SensorTravelRot",
-    "/RealOutputs/BringUp/Arm/MagnetOffsetDelta",
+    "/Hardware/CANcoder/Arm/AbsolutePositionRot",
     "/Hardware/TalonFX/Arm/AppliedVolts",
     "/Hardware/TalonFX/Arm/VelocityRps",
 ]
@@ -107,7 +107,7 @@ FLYWHEEL_KEYS = [
 
 def arm_report(series):
     print("ARM")
-    ratios = [v for _, v in series["/RealOutputs/BringUp/Arm/BestMeasuredRatio"] if not math.isnan(v)]
+    ratios = [v for _, v in series["/RealOutputs/BringUp/Arm/MeasuredRatio"] if not math.isnan(v)]
     travel = max((abs(v) for _, v in series["/RealOutputs/BringUp/Arm/SensorTravelRot"]), default=0.0)
     if not ratios:
         print(f"  no ratio: only {travel:.3f} rot of travel. Move the mechanism further.")
@@ -117,9 +117,11 @@ def arm_report(series):
             # Encoder resolution divided by travel - fine for 50 vs 25, not for 50 vs 49.
             print(f"    coarse: good to about {100 / (travel * 4096):.0f}%. Move it further to sharpen.")
 
-    offsets = series["/RealOutputs/BringUp/Arm/MagnetOffsetDelta"]
-    if offsets:
-        print(f"  to zero the CANcoder where it stopped, ADD {offsets[-1][1]:+.4f} to MagnetOffset")
+    absolute = series["/Hardware/CANcoder/Arm/AbsolutePositionRot"]
+    if absolute:
+        # AbsolutePosition already has MagnetOffset applied, so negating it is the delta that
+        # makes this pose read zero.
+        print(f"  to zero the CANcoder where it stopped, ADD {-absolute[-1][1]:+.4f} to MagnetOffset")
 
     # kG: at each pose the arm is still, so the holding voltage is pure gravity feedforward.
     # V = kG * cos(angle), least squares over every pose the sweep stopped at.

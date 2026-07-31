@@ -90,11 +90,7 @@ public final class BringUp {
       // Hardware/TalonFX/<name>/RotorPositionRot.
       String key = "BringUp/" + name;
       Logger.recordOutput(key + "/SensorTravelRot", sensorTravel);
-      Logger.recordOutput(key + "/MeasuredRatio", ratio);
-      Logger.recordOutput(key + "/BestMeasuredRatio", baseline.bestRatio);
-      // Add this to the CANcoder's EXISTING MagnetOffset to make the pose it is in right now
-      // read zero. refresh() the config before apply(), or you overwrite the offset you just set.
-      Logger.recordOutput(key + "/MagnetOffsetDelta", -encoder.getAbsolutePositionRot());
+      Logger.recordOutput(key + "/MeasuredRatio", baseline.bestRatio);
     }
   }
 }

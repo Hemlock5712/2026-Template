@@ -38,11 +38,8 @@ called `"Arm"` — and records to the log:
 
 | Key (under `/RealOutputs/BringUp/<name>/`) | Meaning |
 | --- | --- |
-| `RotorTravelRot` | Motor rotor turns since the run started |
-| `SensorTravelRot` | Mechanism turns since the run started |
-| `MeasuredRatio` | `RotorTravel / SensorTravel`, **signed**. `NaN` until 0.05 rot of travel |
-| `BestMeasuredRatio` | The same, sampled at the furthest travel seen — trust this one |
-| `MagnetOffsetDelta` | **Add** this to the CANcoder's existing `MagnetOffset` to make its current pose read zero |
+| `SensorTravelRot` | Mechanism turns since the run started — how much travel backs the ratio |
+| `MeasuredRatio` | `RotorTravel / SensorTravel`, **signed**, sampled at the furthest travel seen so far. `NaN` until 0.01 rot of travel |
 
 A motor with no matching CANcoder (the flywheel) gets no `BringUp` keys — there is nothing to
 compare its rotor against. Check those from `/Hardware/TalonFX/<name>/` directly.
@@ -91,7 +88,7 @@ FLYWHEEL
 | Ratio matches the subsystem's `GEAR_RATIO` | Gearing and fusing are right | Nothing |
 | Ratio is a clean multiple off (25 vs 50, 3:1) | Wrong gearbox stage in the code, or the wrong stage measured | Set the code to the **measured** number |
 | Ratio is **negative** | Motor and sensor disagree on direction | Flip `MotorOutput.Inverted`, or the CANcoder's `SensorDirection` — not both |
-| Ratio is `NaN` | Under 0.05 rot of travel | Move it further |
+| Ratio is `NaN` | Under 0.01 rot of travel | Move it further |
 | Holding voltage at 90° is not ~0 | The arm's zero is not where `Arm_Cosine` thinks horizontal is | Re-zero (below) |
 | kG differs from the config | Gravity feedforward is wrong; the arm sags or climbs | Set `Slot0.kG` to the measured value, re-run, confirm it converges |
 | Flywheel settles above the commanded speed | `kV` too high (feedforward overdriving) | Set `Slot0.kV` to `volts per rps`, re-run |
@@ -106,7 +103,9 @@ is done.
 
 1. Put the mechanism in the pose that should read zero (for the arm: **horizontal**, because
    `Arm_Cosine` measures from there) and confirm it by eye.
-2. Read `MagnetOffsetDelta` at the end of the log.
+2. Negate `/Hardware/CANcoder/<name>/AbsolutePositionRot` at the end of the log — that is the
+   delta, because absolute position already has the current `MagnetOffset` applied.
+   `tools/bringup_report.py` prints it for you.
 3. **Add** it to the existing `MagnetOffset` in Tuner X, or in code:
 
 ```java
@@ -139,6 +138,14 @@ Then deploy and re-run the sweep to confirm.
 - Set soft limits before the first closed-loop move, not after.
 - The tool cannot see the robot. Any claim about physical state ("the arm is horizontal") is yours
   to confirm, never the tool's to assume.
+
+## Is this hardware, or just sim?
+
+AdvantageKit already logs it — check `/SystemStats/Network/CAN*/Available` and `RX/Packets`. In
+pure simulation every interface reads `Available: false` with zero packets.
+
+Do **not** use `CANBus.getStatus()` or `isNetworkFD()` for this. Phoenix fakes a healthy bus in
+simulation: with nothing plugged in they return `OK` and `true`.
 
 ## Limits
 

@@ -12,8 +12,6 @@ import com.ctre.phoenix6.controls.ControlRequest;
 import com.ctre.phoenix6.hardware.TalonFX;
 import frc.robot.utils.RunMode;
 import frc.robot.utils.TalonFXUtil;
-import java.util.ArrayList;
-import java.util.List;
 import org.littletonrobotics.junction.AutoLog;
 import org.littletonrobotics.junction.Logger;
 
@@ -28,12 +26,7 @@ import org.littletonrobotics.junction.Logger;
  *
  * <p>Anything read straight off {@link #device()} skips the log and will NOT replay.
  */
-public class LoggedTalonFX {
-  // Every motor ever built, in construction order. refreshAll walks this, so the order is fixed
-  // and replay sees the same sequence the robot did.
-  private static final List<LoggedTalonFX> ALL = new ArrayList<>();
-  private static BaseStatusSignal[] allSignals = new BaseStatusSignal[0];
-
+public class LoggedTalonFX implements LoggedHardware.Device {
   /** One motor's readings for a single loop. @AutoLog generates the log/replay plumbing. */
   @AutoLog
   public static class TalonFXInputs {
@@ -47,10 +40,11 @@ public class LoggedTalonFX {
     public double temperatureCelsius;
     public double closedLoopReference;
     public double closedLoopError;
+    public boolean motionMagicAtTarget;
   }
 
   private final TalonFX device;
-  private final String name;
+  private final String logKey;
   private final TalonFXInputsAutoLogged inputs = new TalonFXInputsAutoLogged();
 
   private final StatusSignal<?> position;
@@ -62,13 +56,14 @@ public class LoggedTalonFX {
   private final StatusSignal<?> temperature;
   private final StatusSignal<?> closedLoopReference;
   private final StatusSignal<?> closedLoopError;
+  private final StatusSignal<?> motionMagicAtTarget;
 
   /**
    * @param name what this motor is called in the log, e.g. "Flywheel". Must be unique.
    */
   public LoggedTalonFX(int deviceId, CANBus bus, String name) {
     this.device = new TalonFX(deviceId, bus);
-    this.name = name;
+    this.logKey = "Hardware/TalonFX/" + name;
 
     position = device.getPosition();
     velocity = device.getVelocity();
@@ -79,14 +74,9 @@ public class LoggedTalonFX {
     temperature = device.getDeviceTemp();
     closedLoopReference = device.getClosedLoopReference();
     closedLoopError = device.getClosedLoopError();
+    motionMagicAtTarget = device.getMotionMagicAtTarget();
 
-    for (LoggedTalonFX other : ALL) {
-      if (other.name.equals(name)) {
-        throw new IllegalArgumentException("Two LoggedTalonFX named \"" + name + "\"");
-      }
-    }
-    ALL.add(this);
-    rebuildSignalList();
+    LoggedHardware.register(this, logKey);
   }
 
   /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */
@@ -99,7 +89,7 @@ public class LoggedTalonFX {
 
   /** Commands the motor. Logged either way; only reaches hardware outside replay. */
   public void setControl(ControlRequest request) {
-    Logger.recordOutput("Hardware/TalonFX/" + name + "/Request", request.getName());
+    Logger.recordOutput(logKey + "/Request", request.getName());
     if (RunMode.current() == RunMode.REPLAY) {
       return;
     }
@@ -156,29 +146,26 @@ public class LoggedTalonFX {
     return inputs.closedLoopError;
   }
 
+  /** True when Motion Magic says the planned move has finished. False before anything runs. */
+  public boolean getMotionMagicAtTarget() {
+    return inputs.motionMagicAtTarget;
+  }
+
   /** The raw TalonFX, for simulation and anything this class does not wrap. Does NOT replay. */
   public TalonFX device() {
     return device;
   }
 
-  /**
-   * Reads every motor once and hands the values to the log. Call this at the top of the loop,
-   * before anything uses a motor. During replay the log fills the values instead of CAN.
-   */
-  public static void refreshAll() {
-    if (RunMode.current() != RunMode.REPLAY) {
-      // One CAN round trip for every signal on every motor, rather than one per read.
-      BaseStatusSignal.refreshAll(allSignals);
-      for (LoggedTalonFX motor : ALL) {
-        motor.updateInputs();
-      }
-    }
-    for (LoggedTalonFX motor : ALL) {
-      Logger.processInputs("Hardware/TalonFX/" + motor.name, motor.inputs);
-    }
+  @Override
+  public BaseStatusSignal[] signals() {
+    return new BaseStatusSignal[] {
+      position, velocity, appliedVolts, supplyCurrent, statorCurrent,
+      torqueCurrent, temperature, closedLoopReference, closedLoopError, motionMagicAtTarget
+    };
   }
 
-  private void updateInputs() {
+  @Override
+  public void updateInputs() {
     inputs.connected =
         BaseStatusSignal.isAllGood(
             position, velocity, appliedVolts, closedLoopReference, closedLoopError);
@@ -191,21 +178,11 @@ public class LoggedTalonFX {
     inputs.temperatureCelsius = temperature.getValueAsDouble();
     inputs.closedLoopReference = closedLoopReference.getValueAsDouble();
     inputs.closedLoopError = closedLoopError.getValueAsDouble();
+    inputs.motionMagicAtTarget = motionMagicAtTarget.getValue() == Boolean.TRUE;
   }
 
-  private static void rebuildSignalList() {
-    List<BaseStatusSignal> collected = new ArrayList<>();
-    for (LoggedTalonFX motor : ALL) {
-      collected.add(motor.position);
-      collected.add(motor.velocity);
-      collected.add(motor.appliedVolts);
-      collected.add(motor.supplyCurrent);
-      collected.add(motor.statorCurrent);
-      collected.add(motor.torqueCurrent);
-      collected.add(motor.temperature);
-      collected.add(motor.closedLoopReference);
-      collected.add(motor.closedLoopError);
-    }
-    allSignals = collected.toArray(new BaseStatusSignal[0]);
+  @Override
+  public void logInputs() {
+    Logger.processInputs(logKey, inputs);
   }
 }

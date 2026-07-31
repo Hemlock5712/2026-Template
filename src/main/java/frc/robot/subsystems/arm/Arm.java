@@ -10,14 +10,13 @@ import static org.wpilib.units.Units.Rotations;
 import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVoltage;
-import com.ctre.phoenix6.hardware.CANcoder;
-import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.GravityTypeValue;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import frc.robot.generated.TunerConstants;
+import frc.robot.hardware.LoggedCANcoder;
+import frc.robot.hardware.LoggedTalonFX;
 import frc.robot.utils.RunMode;
-import frc.robot.utils.TalonFXUtil;
 import org.littletonrobotics.junction.AutoLogOutput;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
@@ -38,8 +37,8 @@ public class Arm extends Mechanism {
   private static final double HORIZONTAL_POSITION = 0.5; // 180° - ground intake
   private static final double SCORING_POSITION = 0.083; // ~30° - scoring
 
-  private final TalonFX motor = new TalonFX(31, TunerConstants.kCANBus);
-  private final CANcoder encoder = new CANcoder(32, TunerConstants.kCANBus);
+  private final LoggedTalonFX motor = new LoggedTalonFX(31, TunerConstants.kCANBus, "Arm");
+  private final LoggedCANcoder encoder = new LoggedCANcoder(32, TunerConstants.kCANBus, "Arm");
 
   // Drives the arm to a target angle with a smooth Motion Magic profile.
   private final MotionMagicVoltage positionOut = new MotionMagicVoltage(0);
@@ -56,9 +55,9 @@ public class Arm extends Mechanism {
     // MagnetOffset you set in Tuner X. Read the device's settings, change the one we care about,
     // write it back.
     CANcoderConfiguration encoderConfig = new CANcoderConfiguration();
-    encoder.getConfigurator().refresh(encoderConfig);
+    encoder.device().getConfigurator().refresh(encoderConfig);
     encoderConfig.MagnetSensor.AbsoluteSensorDiscontinuityPoint = 1.0;
-    encoder.getConfigurator().apply(encoderConfig);
+    encoder.device().getConfigurator().apply(encoderConfig);
 
     TalonFXConfiguration config = new TalonFXConfiguration();
     // Brake, not coast - a coasting arm falls to its hard stop whenever the robot is disabled.
@@ -76,9 +75,9 @@ public class Arm extends Mechanism {
     config.MotionMagic.MotionMagicCruiseVelocity = 2.0;
     config.MotionMagic.MotionMagicAcceleration = 4.0;
 
-    config.Feedback.withRemoteCANcoder(encoder);
+    config.Feedback.withRemoteCANcoder(encoder.device());
 
-    TalonFXUtil.applyConfigWithRetries(motor, config);
+    motor.configure(config);
 
     // Not isSimulation(): that is also true during replay, where the log supplies the sensor
     // values and re-running the physics would fight it.
@@ -118,8 +117,8 @@ public class Arm extends Mechanism {
    */
   @AutoLogOutput(key = "Arm/AtTarget")
   public boolean isAtTarget() {
-    return motor.getMotionMagicAtTarget().getValue()
-        && Math.abs(motor.getClosedLoopError().getValueAsDouble()) <= TOLERANCE.in(Rotations);
+    return motor.getMotionMagicAtTarget()
+        && Math.abs(motor.getClosedLoopError()) <= TOLERANCE.in(Rotations);
   }
 
   /** Where the arm is right now, in degrees. Logged so you can graph it in AdvantageScope. */
@@ -140,12 +139,12 @@ public class Arm extends Mechanism {
 
   /** Current measured arm angle. */
   public Angle getPosition() {
-    return encoder.getPosition().getValue();
+    return Rotations.of(encoder.getPositionRot());
   }
 
   /** The angle the motor's closed loop is currently driving toward. */
   public Angle getTargetPosition() {
-    return Rotations.of(motor.getClosedLoopReference().getValueAsDouble());
+    return Rotations.of(motor.getClosedLoopReference());
   }
 
   private void setPosition(double rotations) {
@@ -178,8 +177,8 @@ public class Arm extends Mechanism {
           0.0); // starts hanging straight out
 
   private void updateSimulation() {
-    var motorSim = motor.getSimState();
-    var encoderSim = encoder.getSimState();
+    var motorSim = motor.device().getSimState();
+    var encoderSim = encoder.device().getSimState();
 
     motorSim.setSupplyVoltage(RobotController.getBatteryVoltage());
     encoderSim.setSupplyVoltage(RobotController.getBatteryVoltage());

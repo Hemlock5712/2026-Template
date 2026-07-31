@@ -5,6 +5,7 @@
 package frc.robot;
 
 import com.limelightvision.Limelight;
+import frc.robot.hardware.LoggedTalonFX;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.subsystems.arm.Arm;
 import frc.robot.subsystems.flywheel.Flywheel;
@@ -78,6 +79,11 @@ public class Robot extends OpModeRobot {
     // AdvantageKit: flush the previous logging cycle, start this one.
     Logger.AdvancedHooks.invokePeriodicAfterUser(0, 0);
     Logger.AdvancedHooks.invokePeriodicBeforeUser();
+
+    // Read every motor once, before any command looks at one. ORDER MATTERS: this is what makes
+    // replay feed logged values in place of CAN.
+    LoggedTalonFX.refreshAll();
+
     Scheduler.getDefault().run();
   }
 

@@ -65,6 +65,9 @@ def includeDesktopSupport = true
 // Also defines JUnit 5.
 dependencies {
     annotationProcessor wpi.java.deps.wpilibAnnotations()
+    // Generates the *AutoLogged classes for @AutoLog. The AdvantageKit vendordep does not pull
+    // this in, so it has to be declared by hand; keep the version matching AdvantageKit.json.
+    annotationProcessor 'org.littletonrobotics.akit:akit-autolog:27.0.0-alpha-4'
     implementation wpi.java.deps.wpilib()
     implementation wpi.java.vendor.java()
 

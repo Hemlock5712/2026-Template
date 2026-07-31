@@ -8,12 +8,11 @@ import static org.wpilib.units.Units.RotationsPerSecond;
 
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
-import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import frc.robot.generated.TunerConstants;
+import frc.robot.hardware.LoggedTalonFX;
 import frc.robot.utils.RunMode;
-import frc.robot.utils.TalonFXUtil;
 import org.littletonrobotics.junction.AutoLogOutput;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
@@ -32,7 +31,7 @@ public class Flywheel extends Mechanism {
   // Shooting speed (rotations per second).
   private static final double SHOOTING_SPEED_RPS = 25.0;
 
-  private final TalonFX motor = new TalonFX(21, TunerConstants.kCANBus);
+  private final LoggedTalonFX motor = new LoggedTalonFX(21, TunerConstants.kCANBus, "Flywheel");
 
   private final MotionMagicVelocityVoltage velocityOut = new MotionMagicVelocityVoltage(0);
   // How close the measured speed needs to be to count as "at target".
@@ -51,7 +50,7 @@ public class Flywheel extends Mechanism {
     config.MotionMagic.MotionMagicCruiseVelocity = 100.0;
     config.MotionMagic.MotionMagicAcceleration = 1000.0;
 
-    TalonFXUtil.applyConfigWithRetries(motor, config);
+    motor.configure(config);
 
     // When nothing else is using the flywheel, keep it stopped. A TalonFX obeys its last command
     // forever, so without this, letting go of the shoot button leaves the wheel spinning.
@@ -80,20 +79,16 @@ public class Flywheel extends Mechanism {
   /** True when the flywheel is within tolerance of its commanded speed. */
   @AutoLogOutput(key = "Flywheel/AtTarget")
   public boolean isAtTarget() {
-    return Math.abs(motor.getClosedLoopError().getValueAsDouble())
-        <= tolerance.in(RotationsPerSecond);
+    return Math.abs(motor.getClosedLoopError()) <= tolerance.in(RotationsPerSecond);
   }
 
   /** How fast the wheel is actually spinning, in rotations per second. */
   @AutoLogOutput(key = "Flywheel/SpeedRps")
   public double getSpeedRps() {
-    return motor.getVelocity().getValue().in(RotationsPerSecond);
+    return motor.getVelocityRps();
   }
 
   private void setVelocity(double rps) {
-    if (RunMode.current() == RunMode.REPLAY) {
-      return;
-    }
     motor.setControl(velocityOut.withVelocity(RotationsPerSecond.of(rps)));
   }
 
@@ -108,7 +103,7 @@ public class Flywheel extends Mechanism {
       new FlywheelSim(Models.flywheelFromPhysicalConstants(GEARBOX, 0.001, 1.0), GEARBOX);
 
   private void updateSimulation() {
-    var motorSim = motor.getSimState();
+    var motorSim = motor.device().getSimState();
     motorSim.setSupplyVoltage(RobotController.getBatteryVoltage());
 
     wheelSim.setInputVoltage(motorSim.getMotorVoltage());

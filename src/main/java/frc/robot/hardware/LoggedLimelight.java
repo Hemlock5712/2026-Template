@@ -11,9 +11,13 @@ import com.limelightvision.Limelight.PoseEstimateType;
 import frc.robot.utils.RunMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.function.Supplier;
 import org.littletonrobotics.junction.AutoLog;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
 
 /**
  * A Limelight whose pose estimates go through the log, so vision decisions can be replayed.
@@ -49,22 +53,33 @@ public class LoggedLimelight {
       boolean soundEnough) {}
 
   private final Limelight camera;
+  private final String name;
   private final String logKey;
   private final CameraInputsAutoLogged inputs = new CameraInputsAutoLogged();
   private final List<Estimate> estimates = new ArrayList<>();
+
+  // Fixed seed: a sim run repeats exactly, which makes a replay comparison meaningful.
+  private final Random noise;
 
   /**
    * @param name the camera's NetworkTables name, e.g. "limelight-br".
    */
   public LoggedLimelight(String name) {
     this.camera = new Limelight(name);
+    this.name = name;
     this.logKey = "Hardware/Limelight/" + name;
+    this.noise = new Random(name.hashCode());
   }
 
   /**
    * The wrapped camera, for configuration and target-space reads. Anything read here comes from
    * NetworkTables, not the log, so it does NOT replay - see {@link frc.robot.commands.DriveToTag}.
    */
+  /** This camera's name, e.g. "limelight-br". */
+  public String name() {
+    return name;
+  }
+
   public Limelight camera() {
     return camera;
   }
@@ -74,8 +89,11 @@ public class LoggedLimelight {
    * order every loop - skipping a call would put replay out of step with the recording.
    */
   public void refresh() {
-    if (RunMode.current() != RunMode.REPLAY) {
-      readFromCamera();
+    switch (RunMode.current()) {
+      case REAL -> readFromCamera();
+      case SIM -> simulateFrame();
+      case REPLAY -> {} // the log already holds what the camera said
+      default -> {}
     }
     Logger.processInputs(logKey, inputs);
 
@@ -102,6 +120,77 @@ public class LoggedLimelight {
     return inputs.connected;
   }
 
+  // ---------------------------------------------------------------------------
+  // Simulation only: a pretend AprilTag, so vision code has something to chew on
+  // with no camera plugged in.
+  // ---------------------------------------------------------------------------
+
+  // One imaginary tag on the field, and how far away it can still be seen.
+  private static final Translation2d SIM_TAG = new Translation2d(3.0, 0.0);
+  private static final double SIM_MAX_SIGHT_METERS = 6.0;
+
+  // Closer than this and the camera makes out a second tag, so MegaTag1 becomes usable.
+  private static final double SIM_TWO_TAG_METERS = 2.5;
+
+  // Error grows with distance: 2 cm per metre of range.
+  private static final double SIM_NOISE_PER_METER = 0.02;
+
+  // How stale a solved frame is by the time we read it.
+  private static final double SIM_LATENCY_SECONDS = 0.03;
+
+  private static Supplier<Pose2d> simPose = null;
+
+  /** Tells the sim cameras where the robot really is. Called by Vision in simulation. */
+  public static void setSimPoseSource(Supplier<Pose2d> trueRobotPose) {
+    simPose = trueRobotPose;
+  }
+
+  private void simulateFrame() {
+    if (simPose == null) {
+      clearInputs(0);
+      return;
+    }
+    Pose2d truth = simPose.get();
+    double distance = truth.getTranslation().getDistance(SIM_TAG);
+    if (distance > SIM_MAX_SIGHT_METERS) {
+      clearInputs(0);
+      inputs.connected = true;
+      return;
+    }
+
+    int tagCount = distance < SIM_TWO_TAG_METERS ? 2 : 1;
+    double sigma = SIM_NOISE_PER_METER * distance;
+
+    // MegaTag1 and MegaTag2 both see the same frame, so they share its noise draw.
+    Pose2d seen =
+        new Pose2d(
+            truth.getX() + noise.nextGaussian() * sigma,
+            truth.getY() + noise.nextGaussian() * sigma,
+            Rotation2d.fromRadians(
+                truth.getRotation().getRadians() + noise.nextGaussian() * sigma * 0.1));
+
+    clearInputs(2);
+    inputs.connected = true;
+    for (int i = 0; i < 2; i++) {
+      inputs.poses[i] = seen;
+      inputs.timestampsSeconds[i] = Logger.getTimestamp() / 1.0e6 - SIM_LATENCY_SECONDS;
+      inputs.tagCounts[i] = tagCount;
+      inputs.avgTagDistancesMeters[i] = distance;
+      inputs.megaTag2[i] = i == 1;
+      inputs.soundEnough[i] = true;
+    }
+  }
+
+  private void clearInputs(int n) {
+    inputs.connected = false;
+    inputs.poses = new Pose2d[n];
+    inputs.timestampsSeconds = new double[n];
+    inputs.tagCounts = new int[n];
+    inputs.avgTagDistancesMeters = new double[n];
+    inputs.megaTag2 = new boolean[n];
+    inputs.soundEnough = new boolean[n];
+  }
+
   private void readFromCamera() {
     List<PoseEstimate> found = new ArrayList<>();
     for (LimelightResults frame : camera.readResultsQueue()) {
@@ -109,14 +198,9 @@ public class LoggedLimelight {
       found.add(camera.getPoseEstimate(frame, PoseEstimateType.MT2_WPIBLUE));
     }
 
-    int n = found.size();
+    clearInputs(found.size());
     inputs.connected = camera.isConnected();
-    inputs.poses = new Pose2d[n];
-    inputs.timestampsSeconds = new double[n];
-    inputs.tagCounts = new int[n];
-    inputs.avgTagDistancesMeters = new double[n];
-    inputs.megaTag2 = new boolean[n];
-    inputs.soundEnough = new boolean[n];
+    int n = found.size();
     for (int i = 0; i < n; i++) {
       PoseEstimate estimate = found.get(i);
       inputs.poses[i] = estimate.pose == null ? new Pose2d() : estimate.pose;

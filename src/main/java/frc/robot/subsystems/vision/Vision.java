@@ -56,10 +56,13 @@ public class Vision {
 
   private final LoggedLimelight camera;
   private final DriveMechanism drivetrain;
+  // Per camera, or two cameras would overwrite each other's numbers every loop.
+  private final String logKey;
 
   private Vision(LoggedLimelight camera, DriveMechanism drivetrain) {
     this.camera = camera;
     this.drivetrain = drivetrain;
+    this.logKey = "Vision/" + camera.name();
   }
 
   /** Wires every camera: relax the library's gates and run each camera's update every loop. */
@@ -84,6 +87,11 @@ public class Vision {
                   0,
                   0);
             });
+
+    // In sim there is no camera, so feed the fake one the pose it should pretend to see.
+    if (RunMode.current() == RunMode.SIM) {
+      LoggedLimelight.setSimPoseSource(drivetrain::getPose);
+    }
 
     for (LoggedLimelight camera : cameras) {
       camera
@@ -117,16 +125,16 @@ public class Vision {
       }
     }
 
-    Logger.recordOutput("Vision/Offered", camera.estimates().size());
-    Logger.recordOutput("Vision/Accepted", best != null);
+    Logger.recordOutput(logKey + "/Offered", camera.estimates().size());
+    Logger.recordOutput(logKey + "/Accepted", best != null);
     if (best == null) {
       return;
     }
 
     double xy = standardDeviation(best);
-    Logger.recordOutput("Vision/AcceptedPose", best.pose());
-    Logger.recordOutput("Vision/AcceptedStdDevXY", xy);
-    Logger.recordOutput("Vision/AcceptedIsMegaTag2", best.megaTag2());
+    Logger.recordOutput(logKey + "/AcceptedPose", best.pose());
+    Logger.recordOutput(logKey + "/AcceptedStdDevXY", xy);
+    Logger.recordOutput(logKey + "/AcceptedIsMegaTag2", best.megaTag2());
     drivetrain.addVisionMeasurement(
         best.pose(), best.timestampSeconds(), VecBuilder.fill(xy, xy, HEADING_STD_DEV));
   }

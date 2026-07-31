@@ -45,6 +45,7 @@ public class LoggedCANcoder implements LoggedHardware.Device {
     velocity = device.getVelocity();
 
     LoggedHardware.register(this, logKey, bus);
+    BringUp.add(name, this);
   }
 
   /** True if the encoder answered on CAN this loop. */

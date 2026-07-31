@@ -37,6 +37,10 @@ public class Arm extends Mechanism {
   private static final double HORIZONTAL_POSITION = 0.5; // 180° - ground intake
   private static final double SCORING_POSITION = 0.083; // ~30° - scoring
 
+  // 50 motor turns = 1 arm turn. Confirm on hardware with the "Bring-Up" utility OpMode before
+  // trusting it - see the device-bringup skill.
+  private static final double GEAR_RATIO = 50.0;
+
   private final LoggedTalonFX motor = new LoggedTalonFX(31, TunerConstants.kCANBus, "Arm");
   private final LoggedCANcoder encoder = new LoggedCANcoder(32, TunerConstants.kCANBus, "Arm");
 
@@ -66,7 +70,7 @@ public class Arm extends Mechanism {
     config.Slot0.GravityType = GravityTypeValue.Arm_Cosine; // fights gravity automatically
 
     // Gains that work in sim. Re-tune on the real robot.
-    config.Slot0.kG = 0.2; // holds the arm up against gravity
+    config.Slot0.kG = 0.34; // holds the arm up against gravity; measured, see device-bringup
     config.Slot0.kS = 0.2; // the nudge to get moving
     config.Slot0.kP = 160.0; // push harder the bigger the miss
     config.Slot0.kD = 2.0; // damping. Keep it small - too big and the arm shakes.
@@ -76,6 +80,10 @@ public class Arm extends Mechanism {
     config.MotionMagic.MotionMagicAcceleration = 4.0;
 
     config.Feedback.withRemoteCANcoder(encoder.device());
+    // Only used if you upgrade to withFusedCANcoder (needs a Phoenix Pro license), but declare it
+    // anyway - it's the number the Bring-Up sweep measures, and a wrong one is invisible until
+    // the arm drives to the wrong angle.
+    config.Feedback.RotorToSensorRatio = GEAR_RATIO;
 
     motor.configure(config);
 
@@ -155,9 +163,6 @@ public class Arm extends Mechanism {
   // Simulation only: a physics model pretends to be the arm, so the same control
   // code works with no robot plugged in.
   // ---------------------------------------------------------------------------
-
-  // 50 motor turns = 1 arm turn.
-  private static final double GEAR_RATIO = 50.0;
 
   private static final double ARM_LENGTH_METERS = 0.5;
 

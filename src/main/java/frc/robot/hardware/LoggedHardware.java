@@ -75,5 +75,7 @@ public final class LoggedHardware {
     for (Device device : ALL) {
       device.logInputs();
     }
+    // After logInputs, so bring-up reads the same values replay would feed it.
+    BringUp.log();
   }
 }

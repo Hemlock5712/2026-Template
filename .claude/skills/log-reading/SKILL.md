@@ -7,8 +7,8 @@ description: How to find and analyze this robot's logs — AdvantageKit .wpilog 
 
 > File links below are relative to the **repo root**, not to this skill's directory.
 
-This template logs with **AdvantageKit, logging-only** — no IO layers and no log-replay. Two kinds
-of logs get written:
+This template logs with **AdvantageKit, logging-only** — no IO layers, but logs *can* be replayed
+through changed code (`run-replay` skill). Two kinds of logs get written:
 
 | Format | Written by | What's in it |
 | --- | --- | --- |
@@ -62,6 +62,8 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/RealOutputs/Arm/AngleDegrees` | `double` | Measured arm angle. **0° = straight out horizontally** (the `Arm_Cosine` frame), so the presets read: scoring ≈ 30°, **stow = 90°**, intake = 180°. Stow is not 0. |
 | `/RealOutputs/Arm/TargetDegrees` | `double` | Angle the arm is driving toward — graph against `AngleDegrees` |
 | `/RealOutputs/Arm/AtTarget` | `boolean` | `Arm.isAtTarget()`; what the stow autos wait on |
+| `/RealOutputs/BringUp/Arm/BestMeasuredRatio` | `double` | Measured rotor:mechanism ratio, signed. `NaN` until the arm has moved. See the `device-bringup` skill |
+| `/RealOutputs/BringUp/Arm/MagnetOffsetDelta` | `double` | Add to the CANcoder's `MagnetOffset` to zero it where the arm stopped |
 | `/RealOutputs/Flywheel/SpeedRps` | `double` | Measured wheel speed, rotations/sec (target is 25) |
 | `/RealOutputs/Flywheel/AtTarget` | `boolean` | `Flywheel.isAtTarget()` |
 | `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state. **Only written by the "State Machine (no driving)" teleop** — it never appears in an autonomous log. |
@@ -172,8 +174,8 @@ voltage, supply/stator current, closed-loop error/reference, device temperature,
 
 - Don't look for `NT:`-prefixed or `DS:`-prefixed keys — those were the old DataLogManager format.
   This template's keys live under `/RealOutputs/`, `/DriverStation/`, `/SystemStats/`.
-- Don't look for `/ReplayOutputs/*` or expect a `_replay.wpilog` — logging-only, no replay path.
-  Re-run the sim instead (`run-sim` skill).
+- Don't expect `/ReplayOutputs/*` in an ordinary run — those keys only exist in a `_replay.wpilog`
+  produced by replaying a recording (`run-replay` skill).
 - Don't expect NT topics in the log — only `Logger.recordOutput` / `@AutoLogOutput` values are
   recorded (that includes the Limelight NT tables: live-only).
 - Don't expect vision keys from a sim log — there's no vision sim.

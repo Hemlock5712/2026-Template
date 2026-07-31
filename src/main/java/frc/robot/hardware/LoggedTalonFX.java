@@ -32,6 +32,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   public static class TalonFXInputs {
     public boolean connected;
     public double positionRot;
+    public double rotorPositionRot;
     public double velocityRps;
     public double appliedVolts;
     public double supplyCurrentAmps;
@@ -48,6 +49,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   private final TalonFXInputsAutoLogged inputs = new TalonFXInputsAutoLogged();
 
   private final StatusSignal<?> position;
+  private final StatusSignal<?> rotorPosition;
   private final StatusSignal<?> velocity;
   private final StatusSignal<?> appliedVolts;
   private final StatusSignal<?> supplyCurrent;
@@ -66,6 +68,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     this.logKey = "Hardware/TalonFX/" + name;
 
     position = device.getPosition();
+    rotorPosition = device.getRotorPosition();
     velocity = device.getVelocity();
     appliedVolts = device.getMotorVoltage();
     supplyCurrent = device.getSupplyCurrent();
@@ -77,6 +80,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     motionMagicAtTarget = device.getMotionMagicAtTarget();
 
     LoggedHardware.register(this, logKey, bus);
+    BringUp.add(name, this);
   }
 
   /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */
@@ -101,9 +105,16 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     return inputs.connected;
   }
 
-  /** Motor position in rotations. */
+  /** Motor position in rotations, after the feedback config - so this is MECHANISM position. */
   public double getPositionRot() {
     return inputs.positionRot;
+  }
+
+  /**
+   * Raw rotor turns, before any gearing or remote sensor. Divide by mechanism turns for a ratio.
+   */
+  public double getRotorPositionRot() {
+    return inputs.rotorPositionRot;
   }
 
   /** Motor speed in rotations per second. */
@@ -159,8 +170,17 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   @Override
   public BaseStatusSignal[] signals() {
     return new BaseStatusSignal[] {
-      position, velocity, appliedVolts, supplyCurrent, statorCurrent,
-      torqueCurrent, temperature, closedLoopReference, closedLoopError, motionMagicAtTarget
+      position,
+      rotorPosition,
+      velocity,
+      appliedVolts,
+      supplyCurrent,
+      statorCurrent,
+      torqueCurrent,
+      temperature,
+      closedLoopReference,
+      closedLoopError,
+      motionMagicAtTarget
     };
   }
 
@@ -170,6 +190,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
         BaseStatusSignal.isAllGood(
             position, velocity, appliedVolts, closedLoopReference, closedLoopError);
     inputs.positionRot = position.getValueAsDouble();
+    inputs.rotorPositionRot = rotorPosition.getValueAsDouble();
     inputs.velocityRps = velocity.getValueAsDouble();
     inputs.appliedVolts = appliedVolts.getValueAsDouble();
     inputs.supplyCurrentAmps = supplyCurrent.getValueAsDouble();

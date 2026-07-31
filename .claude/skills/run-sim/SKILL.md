@@ -53,6 +53,7 @@ falls back rather than sitting silently disabled.
 | `-Pmode=auto` | Auto-enable in AUTONOMOUS (default for `simulateJavaAgent`). Runs **"3 - Drive Stow Drive"** — it exercises the drivetrain *and* the arm, so it's the useful regression test. |
 | `-Pmode=teleop` | Auto-enable in TELEOPERATED. Runs **"Teleop"**. |
 | `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). Runs **"Stow"** — arm only, no drivetrain, so it's the clean way to isolate mechanism behavior. |
+| `-Pmode=utility:Bring-Up` | Sweep the arm through its presets with the flywheel spinning, to measure gear ratio / kG / kV. See the `device-bringup` skill. |
 | `-Pmode=<mode>:<name>` | Pick the OpMode of `<mode>` whose annotation `name` matches `<name>`. |
 | `-PstopAfter=<seconds>` | Exit on its own after N seconds. Without it the sim runs until killed, so scripts and CI need this. |
 | (omitted / `-Pmode=disabled`) | Stay disabled. |

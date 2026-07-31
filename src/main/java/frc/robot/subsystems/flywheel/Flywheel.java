@@ -43,7 +43,7 @@ public class Flywheel extends Mechanism {
     config.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
     // Gains that work in sim. Re-tune on the real robot.
     config.Slot0.kS = 0.05; // the nudge to get moving
-    config.Slot0.kV = 0.125; // volts per rotation-per-second
+    config.Slot0.kV = 0.119; // volts per rotation-per-second; measured, see device-bringup
     config.Slot0.kP = 0.1; // push harder the bigger the speed miss
 
     // How fast the wheel may spin (rps) and speed up (rps²).

@@ -16,6 +16,7 @@ code and explanations over cleverness.
   - `build-and-deploy` — compiling from the CLI and putting code on the robot.
   - `log-reading` — finding and reading `.wpilog` / `.hoot` logs after a run.
   - `run-replay` — replaying a log through changed code (this branch only), and `replayCheck`.
+  - `device-bringup` — measuring a new mechanism: gear ratio, sensor direction, encoder zero, kG/kV.
   - `teaching` — **teacher mode** (see below).
 
 ## Code style: comments say WHAT, the website says WHY

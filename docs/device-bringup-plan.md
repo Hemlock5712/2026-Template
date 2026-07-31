@@ -1,5 +1,12 @@
 # Plan: guided device bring-up (skill + MCP)
 
+> **Status (2026-07-31):** the measurement half shipped on branch `device-bringup` — see the
+> **`device-bringup`** skill. No MCP: every read-only tool in §3 turned out to be a shell command
+> (`curl localhost:1250/?action=getdevices`, read the vendordep JSON), and the actuating half in §3
+> duplicates Tuner X, so it was cut. Steps 6–8 of §4 — the part Tuner X structurally cannot do,
+> because it needs the ratio the *code* declares — are what got built, as an always-on logger plus
+> a report script. §7 phases 0, 1 and 2 are dropped or moot as a result.
+
 Goal: a student plugs in a Kraken, a CANcoder, a CANrange — and gets walked through the whole
 bring-up by something with **live access to the hardware**. Check firmware, assign an ID, confirm
 direction, fuse the encoder, zero it, verify the gear ratio, set soft limits, then generate the

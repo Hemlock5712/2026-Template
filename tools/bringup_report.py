@@ -1,9 +1,12 @@
-"""Reads a bring-up .wpilog and prints what the mechanisms measured.
+"""Reads a bring-up .wpilog and prints what every mechanism in it measured.
 
     python tools/bringup_report.py [log.wpilog]
 
 Defaults to the newest log in ./logs. Needs `pip install robotpy-wpiutil`.
 Record one first with:  ./gradlew simulateJavaAgent '-Pmode=utility:Bring-Up' -PstopAfter=14
+
+Mechanisms are discovered from the log, not hardcoded - anything BringUp measured shows up, and
+whether it is an arm, an elevator or a flywheel is worked out from what it did, not declared.
 See the device-bringup skill for what the numbers mean.
 """
 
@@ -15,11 +18,24 @@ import sys
 
 from wpiutil.log import DataLogReader
 
-# Arm angles use the Arm_Cosine frame: 0 deg is straight out horizontally.
-ARM_STILL_RPS = 0.02  # below this the arm counts as holding, not moving
+STILL_RPS = 0.02  # below this the mechanism counts as holding, not moving
 MIN_DWELL_S = 0.5  # ignore momentary pauses
-FLYWHEEL_SETTLE_RPS = 0.2  # below this much change the wheel counts as up to speed
+SETTLE_RPS = 0.2  # below this much change per loop, a wheel counts as up to speed
 COARSE_TRAVEL_ROT = 0.1  # under this, say how rough the ratio is rather than implying precision
+
+ENABLED = "/DriverStation/Enabled"
+BRINGUP = "/RealOutputs/BringUp/"
+RATIO = "/MeasuredRatio"
+
+
+def entry_names(path):
+    """Every key in the log, so mechanisms can be discovered rather than hardcoded."""
+    names = {}
+    for record in DataLogReader(path):
+        if record.isStart():
+            start = record.getStartData()
+            names[start.name] = start.type
+    return names
 
 
 def read(path, keys):
@@ -47,7 +63,7 @@ def read(path, keys):
 
 def resample(series, keys, step=0.02):
     """Step-hold every key onto a common time grid - the log only records on change."""
-    times = sorted({t for key in keys for t, _ in series[key]})
+    times = sorted({t for key in keys for t, _ in series.get(key, [])})
     if not times:
         return []
     cursors = {key: 0 for key in keys}
@@ -56,7 +72,7 @@ def resample(series, keys, step=0.02):
     t = times[0]
     while t <= times[-1]:
         for key in keys:
-            samples = series[key]
+            samples = series.get(key, [])
             while cursors[key] < len(samples) and samples[cursors[key]][0] <= t:
                 held[key] = samples[cursors[key]][1]
                 cursors[key] += 1
@@ -84,106 +100,119 @@ def mean(rows, key):
     return sum(row[1][key] for row in rows) / len(rows)
 
 
-ENABLED = "/DriverStation/Enabled"
-# Phoenix reports rotations, so the angle stays in rotations all the way to cos(). Degrees appear
-# in the printout only, because nobody pictures an arm at 0.083 rot.
-ANGLE_ROT = "/Hardware/CANcoder/Arm/PositionRot"
-
-ARM_KEYS = [
-    ENABLED,
-    ANGLE_ROT,
-    "/RealOutputs/BringUp/Arm/MeasuredRatio",
-    "/RealOutputs/BringUp/Arm/SensorTravelRot",
-    "/Hardware/CANcoder/Arm/AbsolutePositionRot",
-    "/Hardware/TalonFX/Arm/AppliedVolts",
-    "/Hardware/TalonFX/Arm/VelocityRps",
-]
-FLYWHEEL_KEYS = [
-    "/Hardware/TalonFX/Flywheel/AppliedVolts",
-    "/Hardware/TalonFX/Flywheel/VelocityRps",
-    "/Hardware/TalonFX/Flywheel/ClosedLoopReference",
-]
+def last(series, key, default=None):
+    values = series.get(key) or []
+    return values[-1][1] if values else default
 
 
-def arm_report(series):
-    print("ARM")
-    ratios = [v for _, v in series["/RealOutputs/BringUp/Arm/MeasuredRatio"] if not math.isnan(v)]
-    travel = max((abs(v) for _, v in series["/RealOutputs/BringUp/Arm/SensorTravelRot"]), default=0.0)
-    if not ratios:
-        print(f"  no ratio: only {travel:.3f} rot of travel. Move the mechanism further.")
-    else:
-        print(f"  rotor:mechanism ratio = {ratios[-1]:.2f}   (measured over {travel:.2f} rot)")
-        if travel < COARSE_TRAVEL_ROT:
-            # Encoder resolution divided by travel - fine for 50 vs 25, not for 50 vs 49.
-            print(f"    coarse: good to about {100 / (travel * 4096):.0f}%. Move it further to sharpen.")
+def ratio_report(series, name):
+    """Gear ratio, or - for a follower named "<Leader>/n" - direction against its leader."""
+    ratio = last(series, f"{BRINGUP}{name}{RATIO}", float("nan"))
+    travel = max(
+        (abs(v) for _, v in series.get(f"{BRINGUP}{name}/SensorTravelRot", [])), default=0.0
+    )
 
-    absolute = series["/Hardware/CANcoder/Arm/AbsolutePositionRot"]
-    if absolute:
+    if math.isnan(ratio):
+        print(f"  no ratio yet: only {travel:.3f} rot of travel. Move it further.")
+        return
+
+    if "/" in name:
+        leader = name.rsplit("/", 1)[0]
+        print(
+            f"  follows {leader} at {ratio:+.3f}"
+            f"  ({'SAME direction as' if ratio > 0 else 'OPPOSED to'} the leader)"
+        )
+        if abs(abs(ratio) - 1.0) > 0.05:
+            print("    NOT +-1 - a follower's rotor should track its leader's turn for turn")
+        return
+
+    print(f"  rotor:mechanism ratio = {ratio:.2f}   (measured over {travel:.2f} rot)")
+    if travel < COARSE_TRAVEL_ROT:
+        # Encoder resolution divided by travel - fine for 50 vs 25, not for 50 vs 49.
+        print(f"    coarse: good to about {100 / (travel * 4096):.0f}%. Move it further to sharpen.")
+
+
+def zero_and_gravity(series, name):
+    """Magnet offset, and kG for whichever gravity type the holding voltages actually fit."""
+    angle = f"/Hardware/CANcoder/{name}/PositionRot"
+    volts = f"/Hardware/TalonFX/{name}/AppliedVolts"
+    speed = f"/Hardware/TalonFX/{name}/VelocityRps"
+
+    absolute = last(series, f"/Hardware/CANcoder/{name}/AbsolutePositionRot")
+    if absolute is not None:
         # AbsolutePosition already has MagnetOffset applied, so negating it is the delta that
         # makes this pose read zero.
-        print(f"  to zero the CANcoder where it stopped, ADD {-absolute[-1][1]:+.4f} to MagnetOffset")
+        print(f"  to zero the CANcoder where it stopped, ADD {-absolute:+.4f} to MagnetOffset")
 
-    # kG: at each pose the arm is still, so the holding voltage is pure gravity feedforward.
-    # V = kG * cos(angle), least squares over every pose the sweep stopped at.
-    # Disabled, the arm sags onto its hard stop at 0 V - that is not a holding voltage.
-    grid = resample(series, ARM_KEYS)
-    holds = spans(
-        grid,
-        lambda row: row[ENABLED] and abs(row["/Hardware/TalonFX/Arm/VelocityRps"]) < ARM_STILL_RPS,
-    )
+    # At each pose the mechanism is still, so the holding voltage is pure gravity feedforward.
+    # Disabled it sags onto a hard stop at 0 V, which is not a holding voltage.
+    grid = resample(series, [ENABLED, angle, volts, speed])
+    holds = spans(grid, lambda row: row[ENABLED] and abs(row[speed]) < STILL_RPS)
     if not holds:
-        print("  no still-and-powered pose found - kG needs the arm holding position")
+        print("  no still-and-powered pose - kG needs it holding position")
         return
-    num = den = 0.0
+
+    poses = []
     print("  holding voltage by pose:")
     for rows in holds:
         settled = rows[len(rows) // 2 :]  # drop the approach, keep the settled half
-        rot = mean(settled, ANGLE_ROT)
-        volts = mean(settled, "/Hardware/TalonFX/Arm/AppliedVolts")
-        cos = math.cos(2 * math.pi * rot)
-        num += volts * cos
-        den += cos * cos
-        print(f"    {rot:+.4f} rot ({360 * rot:6.1f} deg)   {volts:+.3f} V")
-    if den > 1e-6:
-        print(f"  kG (fit of V = kG*cos(angle) over those poses) = {num / den:.3f}")
-
-
-def flywheel_report(series):
-    print("\nFLYWHEEL")
-    grid = resample(series, FLYWHEEL_KEYS)
-    if not grid:
-        print("  no flywheel data")
+        rot = mean(settled, angle)
+        volt = mean(settled, volts)
+        poses.append((rot, volt))
+        print(f"    {rot:+.4f} rot ({360 * rot:6.1f} deg)   {volt:+.3f} V")
+    if len(poses) < 2:
+        print(f"  only one pose held - kG is {poses[0][1]:.3f} if this is an elevator")
         return
-    target = max(row["/Hardware/TalonFX/Flywheel/ClosedLoopReference"] for _, row in grid)
+
+    # An arm's holding voltage follows cos(angle); an elevator's is the same at every height.
+    # Fit both and let the residuals say which mechanism this is - that catches Arm_Cosine set on
+    # an elevator, and Elevator_Static set on an arm.
+    cosines = [math.cos(2 * math.pi * rot) for rot, _ in poses]
+    denominator = sum(c * c for c in cosines)
+    cosine_kg = sum(v * c for (_, v), c in zip(poses, cosines)) / denominator if denominator else 0.0
+    constant_kg = sum(v for _, v in poses) / len(poses)
+
+    cosine_error = sum((v - cosine_kg * c) ** 2 for (_, v), c in zip(poses, cosines))
+    constant_error = sum((v - constant_kg) ** 2 for _, v in poses)
+
+    if cosine_error <= constant_error:
+        print(f"  kG = {cosine_kg:.3f}  (fits V = kG*cos(angle) - an ARM, GravityType Arm_Cosine)")
+    else:
+        print(f"  kG = {constant_kg:.3f}  (same volts at every pose - an ELEVATOR, Elevator_Static)")
+
+
+def velocity_report(series, name):
+    """Direction and kV, for a motor run under closed-loop velocity."""
+    volts = f"/Hardware/TalonFX/{name}/AppliedVolts"
+    speed = f"/Hardware/TalonFX/{name}/VelocityRps"
+    reference = f"/Hardware/TalonFX/{name}/ClosedLoopReference"
+
+    grid = resample(series, [volts, speed, reference])
+    target = max((row[reference] for _, row in grid), default=0.0)
     if target <= 0:
         print("  never commanded to spin - nothing to measure")
         return
 
     # Up to speed: commanded at the top speed and no longer accelerating.
-    at_speed = []
-    for i, (t, row) in enumerate(grid):
-        if abs(row["/Hardware/TalonFX/Flywheel/ClosedLoopReference"] - target) > 1e-6:
-            continue
-        if i == 0:
-            continue
-        change = abs(
-            row["/Hardware/TalonFX/Flywheel/VelocityRps"]
-            - grid[i - 1][1]["/Hardware/TalonFX/Flywheel/VelocityRps"]
-        )
-        if change < FLYWHEEL_SETTLE_RPS:
-            at_speed.append((t, row))
+    at_speed = [
+        (t, row)
+        for i, (t, row) in enumerate(grid)
+        if i > 0
+        and abs(row[reference] - target) <= 1e-6
+        and abs(row[speed] - grid[i - 1][1][speed]) < SETTLE_RPS
+    ]
     if not at_speed:
         print(f"  commanded {target:.1f} rps but never settled there")
         return
 
-    rps = mean(at_speed, "/Hardware/TalonFX/Flywheel/VelocityRps")
-    volts = mean(at_speed, "/Hardware/TalonFX/Flywheel/AppliedVolts")
-    print(f"  commanded {target:.2f} rps, settled at {rps:.2f} rps on {volts:+.3f} V")
-    print(f"  direction: {'ok' if volts * rps > 0 else 'BACKWARDS - flip MotorOutput.Inverted'}")
+    rps = mean(at_speed, speed)
+    volt = mean(at_speed, volts)
+    print(f"  commanded {target:.2f} rps, settled at {rps:.2f} rps on {volt:+.3f} V")
+    print(f"  direction: {'ok' if volt * rps > 0 else 'BACKWARDS - flip MotorOutput.Inverted'}")
     error = rps - target
     if abs(error) > 0.02 * abs(target):
         print(f"  off by {error:+.2f} rps ({100 * error / target:+.1f}%) - feedforward is mistuned")
-    print(f"  measured volts per rps = {volts / rps:.4f}   <- start kV here, then re-run")
+    print(f"  measured volts per rps = {volt / rps:.4f}   <- start kV here, then re-run")
 
 
 def main():
@@ -193,10 +222,48 @@ def main():
         if not logs:
             sys.exit("No logs found. Record one with simulateJavaAgent -Pmode=utility:Bring-Up")
         path = max(logs, key=os.path.getmtime)
-    print(f"log: {path}\n")
-    series = read(path, ARM_KEYS + FLYWHEEL_KEYS)
-    arm_report(series)
-    flywheel_report(series)
+    print(f"log: {path}")
+
+    names = entry_names(path)
+    measured = sorted(
+        key[len(BRINGUP) : -len(RATIO)]
+        for key in names
+        if key.startswith(BRINGUP) and key.endswith(RATIO)
+    )
+    motors = sorted(
+        key[len("/Hardware/TalonFX/") : -len("/VelocityRps")]
+        for key in names
+        if key.startswith("/Hardware/TalonFX/") and key.endswith("/VelocityRps")
+    )
+    # A motor with no CANcoder and no leader was never ratio-measured; check its velocity loop.
+    velocity_only = [m for m in motors if m not in measured]
+
+    keys = [ENABLED]
+    for name in measured + velocity_only:
+        keys += [
+            f"{BRINGUP}{name}{RATIO}",
+            f"{BRINGUP}{name}/SensorTravelRot",
+            f"/Hardware/CANcoder/{name}/PositionRot",
+            f"/Hardware/CANcoder/{name}/AbsolutePositionRot",
+            f"/Hardware/TalonFX/{name}/AppliedVolts",
+            f"/Hardware/TalonFX/{name}/VelocityRps",
+            f"/Hardware/TalonFX/{name}/ClosedLoopReference",
+        ]
+    series = read(path, keys)
+
+    if not measured and not velocity_only:
+        print("\nNothing to report - no TalonFX in this log.")
+        return
+
+    for name in measured:
+        print(f"\n{name.upper()}")
+        ratio_report(series, name)
+        if series.get(f"/Hardware/CANcoder/{name}/PositionRot"):
+            zero_and_gravity(series, name)
+
+    for name in velocity_only:
+        print(f"\n{name.upper()}")
+        velocity_report(series, name)
 
 
 if __name__ == "__main__":

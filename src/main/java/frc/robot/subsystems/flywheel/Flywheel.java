@@ -117,7 +117,10 @@ public class Flywheel extends Mechanism {
     wheelSim.setInputVoltage(motorSim.getMotorVoltage());
     wheelSim.update(0.020); // one 20 ms robot loop
 
-    // Report the pretend wheel speed back to the motor, in rotations per second.
-    motorSim.setRotorVelocity(wheelSim.getAngularVelocity() / (2 * Math.PI));
+    // Report the pretend wheel speed back to the motor, in rotations per second. Advance the
+    // rotor too, or RotorPositionRot logs a wheel that never turns.
+    double rotationsPerSecond = wheelSim.getAngularVelocity() / (2 * Math.PI);
+    motorSim.setRotorVelocity(rotationsPerSecond);
+    motorSim.addRotorPosition(rotationsPerSecond * 0.020);
   }
 }

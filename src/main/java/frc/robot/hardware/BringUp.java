@@ -14,9 +14,11 @@ import org.littletonrobotics.junction.Logger;
  * BringUp/&lt;name&gt;/MeasuredRatio}: that is the real rotor-to-mechanism gear ratio, sign
  * included. See the device-bringup skill.
  *
- * <p>Pairs a motor with an encoder by log name: a {@link LoggedTalonFX} and a {@link
- * LoggedCANcoder} both called "Arm" measure each other. A motor with no matching encoder is skipped
- * - there is nothing to compare its rotor against.
+ * <p>Everything is matched by log name. A {@link LoggedTalonFX} and a {@link LoggedCANcoder} both
+ * called "Arm" measure each other, and the ratio is the gear ratio. A motor named "Arm/2" is taken
+ * to be a <b>follower</b> of "Arm" and is measured against the leader's rotor instead, so its ratio
+ * should read +1 (same direction) or -1 (opposed). A motor with neither is skipped - there is
+ * nothing to compare its rotor against.
  *
  * <p>Everything here is computed from logged inputs, so it replays.
  */
@@ -54,13 +56,23 @@ public final class BringUp {
     ENCODERS.put(name, encoder);
   }
 
-  /** Logs one sample per motor/encoder pair. Called from {@link LoggedHardware#refreshAll}. */
+  /** "Arm/2" follows "Arm". Returns null for a name with no slash. */
+  private static String leaderOf(String name) {
+    int slash = name.lastIndexOf('/');
+    return slash < 0 ? null : name.substring(0, slash);
+  }
+
+  /** Logs one sample per measurable motor. Called from {@link LoggedHardware#refreshAll}. */
   static void log() {
     for (Map.Entry<String, LoggedTalonFX> entry : MOTORS.entrySet()) {
       String name = entry.getKey();
       LoggedTalonFX motor = entry.getValue();
+
+      // What this rotor gets compared against: its own CANcoder, or a leader's rotor.
       LoggedCANcoder encoder = ENCODERS.get(name);
-      if (encoder == null) {
+      String leaderName = leaderOf(name);
+      LoggedTalonFX leader = encoder != null || leaderName == null ? null : MOTORS.get(leaderName);
+      if (encoder == null && leader == null) {
         continue;
       }
 
@@ -68,16 +80,20 @@ public final class BringUp {
       if (!baseline.captured) {
         // Wait for both devices to actually answer - signals read 0 until they do, and a bogus
         // zero baseline poisons every later measurement.
-        if (!motor.isConnected() || !encoder.isConnected()) {
+        boolean referenceReady = encoder != null ? encoder.isConnected() : leader.isConnected();
+        if (!motor.isConnected() || !referenceReady) {
           continue;
         }
         baseline.rotorRot = motor.getRotorPositionRot();
-        baseline.sensorRot = encoder.getPositionRot();
+        baseline.sensorRot =
+            encoder != null ? encoder.getPositionRot() : leader.getRotorPositionRot();
         baseline.captured = true;
       }
 
       double rotorTravel = motor.getRotorPositionRot() - baseline.rotorRot;
-      double sensorTravel = encoder.getPositionRot() - baseline.sensorRot;
+      double sensorTravel =
+          (encoder != null ? encoder.getPositionRot() : leader.getRotorPositionRot())
+              - baseline.sensorRot;
       double travel = Math.abs(sensorTravel);
       double ratio = travel >= MIN_TRAVEL_ROT ? rotorTravel / sensorTravel : Double.NaN;
 

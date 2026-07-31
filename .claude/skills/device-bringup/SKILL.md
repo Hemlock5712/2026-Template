@@ -20,29 +20,70 @@ Use **this** for anything that needs to know what the *code* expects: the rotor-
 declared in the subsystem, the sign the closed loop assumes, the feedforward gains. Tuner X cannot
 know those.
 
-## The one-time device setup (Tuner X)
+## 1. See what is on the bus
 
-Do this before anything below. A new device ships at **CAN ID 0** — that's almost always the one
-you just plugged in.
+The robot program runs a Phoenix diagnostic server on port **1250**. It answers plain HTTP while
+the program is running — in sim and on the robot — so inventory needs no tool at all:
 
-1. Firmware — match every device to the pinned Phoenix vendordep version.
+```bash
+curl -s "http://localhost:1250/?action=getdevices"        # sim
+curl -s "http://10.TE.AM.2:1250/?action=getdevices"       # on the robot
+```
+
+```
+ID= 31  Talon FX vers. C   fw=26.50.0.0 (Phoenix 6)  pro=True
+ID= 32  CANCoder vers. H   fw=26.50.0.0 (Phoenix 6)  pro=True
+```
+
+Each entry has `ID`, `Model`, `CurrentVers` (firmware), `IsPROLicensed` and `SupportsConfigs`, plus
+a bus-wide `BusUtilPerc`. **A brand-new device sits at ID 0** — that is almost always the thing you
+just plugged in. Duplicate IDs show up here too.
+
+**Firmware check:** diff `CurrentVers` against the pinned vendordep in
+[vendordeps/](vendordeps/) — `26.50.0-alpha-1` there means `26.50.0.0` on the device. Fix a
+mismatch before anything else; wrong firmware wastes hours further down.
+
+> In **simulation** this lists only devices the code constructed, so it cannot discover something
+> new. On hardware it enumerates the real bus.
+
+Per-device actions (`selftest`, `getconfigs`, `setid`, `blink`) are recognised by the server but
+return `Error: -120` against simulated devices — use Tuner X for those.
+
+## 2. The one-time device setup (Tuner X)
+
+1. Update firmware to match the vendordep, if step 1 found a mismatch.
 2. Blink it so you can see which physical device you're about to configure, then assign the CAN ID.
 3. **A CANcoder used as a TalonFX's feedback source must be on the same CAN bus as that TalonFX.**
    Nothing in code stops you splitting them; it just fails on hardware.
 
-## Measuring: `BringUp`
+## 3. Write the subsystem
+
+`BringUp` can only measure devices the robot program has constructed, so the subsystem comes first
+— see the **`add-a-mechanism`** skill. Name the wrappers, because the names are what get matched:
+
+| Wrapper name | Meaning |
+| --- | --- |
+| `LoggedTalonFX(31, bus, "Arm")` + `LoggedCANcoder(32, bus, "Arm")` | motor and its sensor — measured against each other, giving the gear ratio |
+| `LoggedTalonFX(33, bus, "Arm/2")` | a **follower** of `"Arm"` — measured against the leader's rotor, so it should read ±1 |
+| `LoggedTalonFX(21, bus, "Flywheel")` | motor with no sensor and no leader — checked as a velocity loop |
+
+## 4. Measuring: `BringUp`
 
 [BringUp.java](src/main/java/frc/robot/hardware/BringUp.java) runs every loop, in every mode, in
-sim and on hardware. It pairs a `LoggedTalonFX` with a `LoggedCANcoder` **by log name** — both
-called `"Arm"` — and records to the log:
+sim and on hardware, and records to the log:
 
 | Key (under `/RealOutputs/BringUp/<name>/`) | Meaning |
 | --- | --- |
 | `SensorTravelRot` | Mechanism turns since the run started — how much travel backs the ratio |
 | `MeasuredRatio` | `RotorTravel / SensorTravel`, **signed**, sampled at the furthest travel seen so far. `NaN` until 0.01 rot of travel |
 
-A motor with no matching CANcoder (the flywheel) gets no `BringUp` keys — there is nothing to
-compare its rotor against. Check those from `/Hardware/TalonFX/<name>/` directly.
+A motor with neither a CANcoder nor a leader gets no `BringUp` keys — there is nothing to compare
+its rotor against. `tools/bringup_report.py` checks those as velocity loops instead.
+
+The report **discovers mechanisms from the log**; nothing is hardcoded. It also works out what kind
+of mechanism each one is from what it did: holding voltage that follows `cos(angle)` is an arm,
+the same holding voltage at every pose is an elevator, and it names the `GravityType` that matches.
+That catches `Arm_Cosine` set on an elevator.
 
 Everything is computed from logged inputs, so a bring-up run **replays** (see the `run-replay`
 skill).
@@ -94,6 +135,9 @@ FLYWHEEL
 | Flywheel settles above the commanded speed | `kV` too high (feedforward overdriving) | Set `Slot0.kV` to `volts per rps`, re-run |
 | Flywheel settles below | `kV` too low, or the wheel is loaded | Same, then check for rub |
 | `direction: BACKWARDS` | Motor spins the wrong way | Flip `MotorOutput.Inverted` — do **not** negate the setpoint at the call site |
+| Follower reads `-1` when it should be `+1` (or the reverse) | Follower wired or configured the wrong way | Flip the `Follower` request's `MotorAlignmentValue` (`Aligned` / `Opposed`) |
+| Follower is not near ±1 at all | It is not actually following — wrong leader ID, or it is being commanded separately | Check the `Follower` control request |
+| kG line says ELEVATOR on an arm (or the reverse) | `Slot0.GravityType` is set to the wrong kind | Match `GravityType` to what the poses measured |
 
 kG and kV are measured against whatever gains are currently loaded, so they move a little as you
 correct them. **Re-run until the number stops changing** — two runs agreeing within a few percent
@@ -168,6 +212,10 @@ only ever surfaces as a `[phoenix] CANbus Failed to Connect` console line.
   CANcoder independently, so `RotorToSensorRatio`, fused-vs-remote, magnet offset and sensor
   inversion never enter the control path a sim run exercises. A green sim proves the control logic;
   it does not prove the device config. Verify that class of change on hardware.
+- **Sim cannot test follower direction.** Phoenix slaves a simulated follower's rotor to its
+  leader and ignores `MotorAlignmentValue`, so a reversed follower still reads `+1` in sim.
+  Measured, not assumed: an `Opposed` follower logged a rotor position byte-identical to its
+  leader's. Verify follower direction on hardware.
 - kS and kA need a voltage ramp at more than one speed — this measures kG and kV only.
 - Fusing a CANcoder (`withFusedCANcoder`) needs a Phoenix Pro license. Unlicensed, it falls back to
   remote and `RotorToSensorRatio` goes unused — declare it anyway so the number is recorded.

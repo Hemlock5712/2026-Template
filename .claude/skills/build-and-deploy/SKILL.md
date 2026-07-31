@@ -33,6 +33,8 @@ Useful variants:
 | `./gradlew build` | Compile + spotless + tests. What to run before saying "it builds". |
 | `./gradlew clean compileJava` | When you suspect a stale build directory. |
 | `./gradlew spotlessApply` | Format only. |
+| `./gradlew checkReplaySafety` | Fails on a raw Phoenix device or Phoenix's clock outside `frc/robot/hardware`. Part of `build`. |
+| `./gradlew replayCheck` | Replays the newest log and fails if any output differs. Needs a recording first: `./gradlew simulateJavaAgent -PstopAfter=20`. See `run-replay`. |
 
 ## Spotless runs on every compile
 

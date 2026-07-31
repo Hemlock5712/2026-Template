@@ -57,7 +57,7 @@ Respect these as project conventions rather than re-deriving them:
 
 - The robot reads AprilTags only through **Limelights** (two cameras, NT names `"limelight-br"` /
   `"limelight-bl"`), via the official **LimelightLib 2** vendordep (`com.limelightvision.Limelight`
-  objects owned as fields on `Robot`).
+  objects, each wrapped in a `LoggedLimelight` and owned as a field on `Robot`).
   [Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) fuses their AprilTag pose
   estimates into the drivetrain's pose estimator (`Vision.registerAll` in `Robot`).
   [DriveToTag](src/main/java/frc/robot/commands/DriveToTag.java) works in the **tag's frame**
@@ -68,8 +68,13 @@ Respect these as project conventions rather than re-deriving them:
   parked facing the tag has yaw **±180°** in tag space, not 0 — `DriveToTag` drives yaw to π.
   Camera firmware must be 2027.0+, and camera-side config (mount pitch/side signs, POI z-component)
   must be re-entered per the migration guide.
-- There is **no vision in simulation** (no PhotonVision sim), so tag-based behavior can only be
-  validated on real hardware. See the `run-sim` skill.
+- **Simulation has a fake camera.** `LoggedLimelight` invents one AprilTag on the field and reports
+  a noisy pose from the true one, so pose-estimate code runs in sim and can be replayed. It is a
+  stand-in, not a camera model: no lens, no field-of-view, no tag layout. Tag *geometry* still has
+  to be validated on hardware, and `DriveToTag` (target space) is not simulated at all.
+- **Vision trust lives in our code, not the library.** LimelightLib is configured permissively and
+  only rejects structurally broken frames; the distance gate, tag-count gates and standard-deviation
+  maths are in `Vision.java` so they can be re-tuned against a recorded match. See `run-replay`.
 - For canonical tag IDs / poses, use the season's WPILib `AprilTagFieldLayout` (not yet loaded in
   code) and the Limelight's field map. Don't assume a prior season's tag layout.
 

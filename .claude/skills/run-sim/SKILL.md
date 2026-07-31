@@ -54,7 +54,12 @@ falls back rather than sitting silently disabled.
 | `-Pmode=teleop` | Auto-enable in TELEOPERATED. Runs **"Teleop"**. |
 | `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). Runs **"Stow"** — arm only, no drivetrain, so it's the clean way to isolate mechanism behavior. |
 | `-Pmode=<mode>:<name>` | Pick the OpMode of `<mode>` whose annotation `name` matches `<name>`. |
+| `-PstopAfter=<seconds>` | Exit on its own after N seconds. Without it the sim runs until killed, so scripts and CI need this. |
 | (omitted / `-Pmode=disabled`) | Stay disabled. |
+
+The robot **stays disabled for the first 1.5 s**, then enables. That is deliberate: an OpMode only
+schedules its commands on the disabled → enabled edge, and a log that is already enabled on its
+first entry cannot be replayed — nothing would ever run. See the `run-replay` skill.
 
 ### How auto-enable works
 

@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  push:
+    branches: [main, advanced-replay]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # WPILib 2027 needs JDK 25; anything older fails with "invalid source release 25".
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Formatting, compile, and checkReplaySafety (no raw Phoenix devices, no Phoenix clock).
+      - name: Build
+        run: ./gradlew build
+
+      # Record a log headlessly. stopAfter makes the sim end on its own instead of running forever.
+      - name: Record a simulation log
+        run: ./gradlew simulateJavaAgent -Pmode=auto:"3 - Drive Stow Drive" -PstopAfter=20
+
+      # Replay that log and fail if any output differs from what the robot actually did. This is
+      # what catches a sensor read that stopped going through the log.
+      - name: Check replay reproduces the recording
+        run: ./gradlew replayCheck
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpilogs
+          path: logs/*.wpilog
+          if-no-files-found: warn
+          retention-days: 7

@@ -6,8 +6,8 @@ package frc.robot.subsystems;
 
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import frc.robot.generated.TunerConstants;
+import frc.robot.hardware.LoggedSwerveDrivetrain;
 import frc.robot.utils.RunMode;
-import frc.robot.utils.Telemetry;
 import java.util.function.Supplier;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
@@ -28,14 +28,12 @@ public class DriveMechanism extends Mechanism {
   // IDs/gains - regenerate it for your robot.
   private final CommandSwerveDrivetrain drivetrain = TunerConstants.createDrivetrain();
 
-  // Logs the drivetrain state with AdvantageKit - see the log-reading skill.
-  private final Telemetry telemetry = new Telemetry();
+  // Routes the drivetrain state through the log so everything downstream replays.
+  private final LoggedSwerveDrivetrain logged = new LoggedSwerveDrivetrain(drivetrain);
 
   public DriveMechanism() {
     super("Drivetrain");
     Scheduler.getDefault().addPeriodic(drivetrain::applyOperatorPerspective);
-    // Log once per loop - AdvantageKit logging must run on the main loop.
-    Scheduler.getDefault().addPeriodic(() -> telemetry.telemeterize(drivetrain.getState()));
   }
 
   /** Returns a command that continuously applies the supplied control request to the drivetrain. */
@@ -53,13 +51,12 @@ public class DriveMechanism extends Mechanism {
 
   /** The robot's field pose from odometry, blue-origin (the origin never flips with alliance). */
   public Pose2d getPose() {
-    return drivetrain.getState().Pose;
+    return logged.getPose();
   }
 
   /** The robot's field-relative velocity from odometry (rotated out of the robot frame). */
   public ChassisVelocities getFieldVelocity() {
-    var state = drivetrain.getState();
-    return state.Velocity.toFieldRelative(state.Pose.getRotation());
+    return logged.getFieldVelocity();
   }
 
   /**
@@ -73,6 +70,9 @@ public class DriveMechanism extends Mechanism {
    */
   public void addVisionMeasurement(
       Pose2d visionRobotPose, double timestampSeconds, Matrix<N3, N1> stdDevs) {
+    if (RunMode.current() == RunMode.REPLAY) {
+      return; // the pose comes from the log; there is no estimator running to correct
+    }
     drivetrain.addVisionMeasurement(visionRobotPose, timestampSeconds, stdDevs);
   }
 }

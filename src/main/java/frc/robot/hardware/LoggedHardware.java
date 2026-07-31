@@ -43,6 +43,14 @@ public final class LoggedHardware {
   // silently freezing every sensor on the robot. Mixing buses in one call is not an option.
   private static final Map<String, List<BaseStatusSignal>> SIGNALS_BY_BUS = new LinkedHashMap<>();
 
+  /** Registers a device that has no signals of its own to batch, such as the swerve drivetrain. */
+  static void register(Device device, String logKey) {
+    if (!KEYS.add(logKey)) {
+      throw new IllegalArgumentException("Two logged devices named \"" + logKey + "\"");
+    }
+    ALL.add(device);
+  }
+
   static void register(Device device, String logKey, CANBus bus) {
     if (!KEYS.add(logKey)) {
       throw new IllegalArgumentException("Two logged devices named \"" + logKey + "\"");

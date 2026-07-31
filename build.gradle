@@ -201,3 +201,40 @@ tasks.withType(JavaCompile).configureEach {
     dependsOn 'spotlessApply'
 }
 
+
+// Replay guard: a Phoenix object read directly bypasses the log and silently stops replaying.
+// Every device must go through a wrapper in frc/robot/hardware. See the run-replay skill.
+def loggedDeviceTypes = ['TalonFX', 'CANcoder', 'CANrange', 'Pigeon2', 'CANdi', 'CANdle']
+
+tasks.register('checkReplaySafety') {
+    group = 'verification'
+    description = 'Fails if a Phoenix device is constructed outside frc/robot/hardware.'
+    def tree = fileTree('src/main/java/frc/robot') {
+        include '**/*.java'
+        exclude 'hardware/**'    // the wrappers themselves
+        exclude 'generated/**'   // Tuner X output; the swerve drivetrain owns its own devices
+    }
+    inputs.files(tree)
+    doLast {
+        def offenders = []
+        tree.each { f ->
+            f.eachLine { line, n ->
+                if (line.trim().startsWith('//') || line.trim().startsWith('*')) return
+                loggedDeviceTypes.each { dev ->
+                    if (line =~ /new\s+([\w.]+\.)?${dev}\s*\(/) {
+                        offenders << "  ${f.name}:${n}   new ${dev}(...)"
+                    }
+                }
+            }
+        }
+        if (offenders) {
+            throw new GradleException(
+                "Raw Phoenix devices outside frc/robot/hardware:\n"
+                + offenders.join("\n")
+                + "\n\nThese do NOT replay - their values come from CAN, not the log.\n"
+                + "Use the matching wrapper instead, e.g. LoggedTalonFX.")
+        }
+    }
+}
+
+check.dependsOn 'checkReplaySafety'

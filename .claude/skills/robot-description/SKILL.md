@@ -93,8 +93,10 @@ and the "which composition tool when" table live in `ONBOARDING.md` § "Holds ne
   deliberately **no `seedFieldCentric()`** — re-zeroing the heading rewrites the pose estimator's
   rotation, which is the same heading MegaTag2 solves against, so one press silently corrupts every
   later vision fix. Registers
-  `applyOperatorPerspective` on the scheduler and registers [Telemetry](src/main/java/frc/robot/utils/Telemetry.java)
-  with the drivetrain. This is the **logging surface** — see the `log-reading` skill.
+  `applyOperatorPerspective` on the scheduler and wraps the drivetrain in
+  [LoggedSwerveDrivetrain](src/main/java/frc/robot/hardware/LoggedSwerveDrivetrain.java), which
+  routes the whole `SwerveDriveState` through the log. `getPose()` / `getFieldVelocity()` read from
+  there, not from the live drivetrain. This is the **logging surface** — see `log-reading`.
 
 The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `ApplyFieldVelocity`,
 `ApplyRobotVelocity`, `Idle`). There is **no PathPlanner / Choreo / maple-sim** in this template.
@@ -164,11 +166,16 @@ for a real robot. Key values:
 
 ## Logging
 
-**AdvantageKit, logging-only** (no IO layers, no replay). [Robot.java](src/main/java/frc/robot/Robot.java)
-starts the AdvantageKit `Logger` (`WPILOGWriter` + `NT4Publisher`) and ticks it in `robotPeriodic()`
-— this template extends `OpModeRobot`, not `LoggedRobot`, so the tick is manual via
-`Logger.AdvancedHooks`. [Telemetry](src/main/java/frc/robot/utils/Telemetry.java) logs the drive
-state under `Drivetrain/*` once per loop; DS/joystick data, system stats, and console output are
+**AdvantageKit with replay** (this is the `advanced-replay` branch; plain `main` is logging-only).
+[Robot.java](src/main/java/frc/robot/Robot.java) starts the `Logger` (`WPILOGWriter` +
+`NT4Publisher`) and ticks it in `robotPeriodic()` — this template extends `OpModeRobot`, not
+`LoggedRobot`, so the tick is manual via `Logger.AdvancedHooks`.
+
+Every sensor is read through a wrapper in
+[frc/robot/hardware](src/main/java/frc/robot/hardware) and collected once per loop by
+`LoggedHardware.refreshAll()`, so a recorded log can be replayed through changed code — see the
+**`run-replay`** skill. `LoggedSwerveDrivetrain` logs the drive state under `Drivetrain/*`;
+DS/joystick data, system stats, and console output are
 captured by AdvantageKit itself. **NT topics are not auto-recorded** — new values go in the log via
 `Logger.recordOutput` or `@AutoLogOutput`. Phoenix devices also log to `./logs/example.hoot`.
 Full details (paths, key list, how to read both formats) are in the **`log-reading`** skill.
@@ -206,8 +213,12 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 | Drive commands | [commands/](src/main/java/frc/robot/commands/) |
 | v2-style command base | [utils/ClassicCommand.java](src/main/java/frc/robot/utils/ClassicCommand.java) |
 | Swerve constants / IDs / gains | [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) |
-| Telemetry → NT/WPILOG | [utils/Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java) |
+| Logged device wrappers (replay) | [hardware/](src/main/java/frc/robot/hardware/) — `LoggedTalonFX`, `LoggedCANcoder`, `LoggedCANrange`, `LoggedLimelight`, `LoggedSwerveDrivetrain` |
+| Per-loop sensor read + log | [hardware/LoggedHardware.java](src/main/java/frc/robot/hardware/LoggedHardware.java) |
+| REAL / SIM / REPLAY mode | [utils/RunMode.java](src/main/java/frc/robot/utils/RunMode.java) |
+| Replay regression check | [ReplayCheck.java](src/test/java/frc/robot/ReplayCheck.java) (`./gradlew replayCheck`) |
+| Patched WPILib copies (delete once upstream) | `src/main/java/org/wpilib/` |
 | Headless sim auto-enable | [utils/SimStartup.java](src/main/java/frc/robot/utils/SimStartup.java) |
 | Vision → pose estimator (per-camera) | [vision/Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) |
-| Limelight camera objects (hardware) | [Robot.java](src/main/java/frc/robot/Robot.java) (`limelightBR` / `limelightBL`, LimelightLib vendordep) |
+| Limelight camera objects (hardware) | [Robot.java](src/main/java/frc/robot/Robot.java) (`limelightBR` / `limelightBL`, `LoggedLimelight` wrapping the LimelightLib vendordep) |
 | TalonFX config helper | [utils/TalonFXUtil.java](src/main/java/frc/robot/utils/TalonFXUtil.java) |

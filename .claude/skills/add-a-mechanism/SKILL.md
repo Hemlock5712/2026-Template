@@ -22,7 +22,10 @@ the procedure.
 
 The three rules that define the shape:
 
-- **Own the hardware.** The `TalonFX` / `CANcoder` are `private final` fields here and nowhere else.
+- **Own the hardware.** The `LoggedTalonFX` / `LoggedCANcoder` are `private final` fields here and
+  nowhere else. Use the wrappers in [frc/robot/hardware](../../src/main/java/frc/robot/hardware),
+  never a bare `TalonFX` — a raw device reads CAN instead of the log and silently stops replaying.
+  `checkReplaySafety` fails the build if you use one. See the **run-replay** skill.
 - **Keep setters private.** No public `setSpeed()`. The scheduler can only stop two things fighting
   over a motor if the only way to move it is a command.
 - **Hand out commands.** Public methods return `Command`, built with `runRepeatedly(...)`.
@@ -31,10 +34,25 @@ The three rules that define the shape:
 
 Follow `Arm`'s constructor order: build a `TalonFXConfiguration`, set neutral mode and inversion,
 set `Slot0` gains and Motion Magic limits **inline** (no named constants for one-use config
-values), set the feedback source, then `TalonFXUtil.applyConfigWithRetries(motor, config)`.
+values), set the feedback source, then `motor.configure(config)`.
+
+Each wrapper takes a **name**, which becomes its key in the log and must be unique:
+
+```java
+private final LoggedTalonFX motor = new LoggedTalonFX(31, TunerConstants.kCANBus, "Arm");
+private final LoggedCANcoder encoder = new LoggedCANcoder(32, TunerConstants.kCANBus, "Arm");
+```
+
+Getters return plain numbers, not `StatusSignal`s: `motor.getVelocityRps()`,
+`motor.getClosedLoopError()`, `encoder.getPositionRot()`. Anything the wrapper doesn't cover is on
+`motor.device()` — but reads there do **not** replay.
 
 If you configure a **CANcoder**, `refresh()` the existing config first — `apply()` writes every
-field, so building a fresh config zeroes the `MagnetOffset` set in Tuner X. See `Arm`.
+field, so building a fresh config zeroes the `MagnetOffset` set in Tuner X. Go through
+`encoder.device().getConfigurator()`. See `Arm`.
+
+A CANcoder fused into a TalonFX with `withRemoteCANcoder` **must be on the same CAN bus as that
+TalonFX**. Nothing in the code stops you splitting them; it fails on hardware.
 
 ### 3. Write the commands
 
@@ -81,10 +99,14 @@ Without one it never moves in sim, and any routine waiting on `isAtTarget()` han
 "Simulation only" block at the bottom of `Arm` or `Flywheel`:
 
 ```java
-if (Utils.isSimulation()) {
+// Not isSimulation(): that is also true during replay, where the log supplies the sensor values
+// and re-running the physics would fight them.
+if (RunMode.current() == RunMode.SIM) {
   Scheduler.getDefault().addPeriodic(this::updateSimulation);
 }
 ```
+
+Sim physics needs the real device, so reach through the wrapper: `motor.device().getSimState()`.
 
 Pick the matching WPILib plant (`SingleJointedArmSim`, `ElevatorSim`, `FlywheelSim`,
 `DCMotorSim`), feed it `motorSim.getMotorVoltage()`, then write the result back to the sim state

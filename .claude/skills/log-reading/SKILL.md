@@ -34,18 +34,27 @@ Everything logged is also mirrored **live** to NetworkTables under `/AdvantageKi
 
 ## What this code actually logs (the `.wpilog` keys)
 
-[Telemetry.java](src/main/java/frc/robot/utils/Telemetry.java) logs the swerve state once per loop
-(sampled from the drivetrain by [DriveMechanism](src/main/java/frc/robot/subsystems/DriveMechanism.java)).
-Outputs land under a **`/RealOutputs/` prefix**:
+Two kinds of key, and the difference matters:
+
+- **Inputs** — everything read from hardware, at the top level (`/Drivetrain/Pose`,
+  `/Hardware/TalonFX/Arm/VelocityRps`). Written by `LoggedHardware.refreshAll()`. These are what
+  replay feeds back in.
+- **Outputs** — anything the code computed, under **`/RealOutputs/`**. In a replay log you also get
+  **`/ReplayOutputs/`**: the same keys recomputed by the current code. Graph the two against each
+  other to see what a change would have done. See the **`run-replay`** skill.
+
+[LoggedSwerveDrivetrain](src/main/java/frc/robot/hardware/LoggedSwerveDrivetrain.java) logs the
+swerve state once per loop. Note `Pose`, `Velocity` and the module arrays are **inputs** now, so
+they have no `/RealOutputs/` prefix; the derived speeds below still do:
 
 | Log key | Type | Meaning |
 | --- | --- | --- |
-| `/RealOutputs/Drivetrain/Pose` | `struct:Pose2d` | Odometry pose (blue-alliance origin) |
-| `/RealOutputs/Drivetrain/Velocity` | `struct:ChassisVelocities` | Measured robot-relative chassis velocity |
-| `/RealOutputs/Drivetrain/RawHeading` | `struct:Rotation2d` | Raw gyro yaw |
-| `/RealOutputs/Drivetrain/ModuleStates` | `struct:SwerveModuleVelocity[]` | Per-module measured velocity + angle |
-| `/RealOutputs/Drivetrain/ModuleTargets` | `struct:SwerveModuleVelocity[]` | Per-module commanded targets |
-| `/RealOutputs/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
+| `/Drivetrain/Pose` | `struct:Pose2d` | Odometry pose (blue-alliance origin) |
+| `/Drivetrain/Velocity` | `struct:ChassisVelocities` | Measured robot-relative chassis velocity |
+| `/Drivetrain/RawHeading` | `struct:Rotation2d` | Raw gyro yaw |
+| `/Drivetrain/ModuleVelocities` | `struct:SwerveModuleVelocity[]` | Per-module measured velocity + angle |
+| `/Drivetrain/ModuleTargets` | `struct:SwerveModuleVelocity[]` | Per-module commanded targets |
+| `/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
 | `/RealOutputs/Drivetrain/TranslationSpeedMps` | `double` | `hypot(vx, vy)` |
 | `/RealOutputs/Drivetrain/RotationSpeedRadPerSec` | `double` | Yaw rate magnitude |
 | `/RealOutputs/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples |

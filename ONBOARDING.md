@@ -54,8 +54,11 @@ comfortable:
 - `commands/DriveToPose.java`, `commands/DriveToTag.java` — drive to a field pose / to an AprilTag.
 - `subsystems/vision/Vision.java` — feeds AprilTag pose estimates from the cameras (LimelightLib
   vendordep) into the drivetrain's pose estimator.
-- `subsystems/CommandSwerveDrivetrain.java`, `generated/TunerConstants.java`,
-  `utils/Telemetry.java` — generated infrastructure you rarely edit by hand.
+- `subsystems/CommandSwerveDrivetrain.java`, `generated/TunerConstants.java` — generated
+  infrastructure you rarely edit by hand.
+- `hardware/` — the `Logged*` device wrappers. Every sensor goes through one so a recorded log can
+  be replayed through changed code; see the `run-replay` skill. Use `LoggedTalonFX`, never a bare
+  `TalonFX` — the build fails if you do.
 
 ## If you know `RobotContainer`, here's the map
 

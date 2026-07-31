@@ -27,25 +27,37 @@ run, sim included.
 - `GET /?action=getdevices` **works in simulation**. Returned all 16 simulated devices with
   `ID`, `Model`, `CurrentVers` (firmware), `HardwareRev`, `BootloaderRev`, `SoftStatus`
   (`"Simulated Device."`), `IsPROLicensed`, `SupportsConfigs`, plus `BusUtilPerc`.
-- Per-device actions `selftest`, `getconfigs`, `config`, `blink`, `setid` return
-  `Error: -120, "Specified device was not found"` against simulated devices. Adding `&canbus=sim`
-  or a device name does not help.
-- **Correction (2026-07-31):** this note used to read that those actions were "recognised, since
-  the server echoes the action rather than rejecting it." That inference was wrong — `action=
-  bogusaction` gets the same echo and the same -120. The device lookup fails before the action is
-  ever dispatched, so the response says nothing about which actions exist. Whether `blink` and
-  `setid` work over HTTP is still **unknown** and still needs a real device.
+- **Per-device actions work, and this section had them wrong twice.** Every `-120 "Specified
+  device was not found"` was a *wrong parameter name*, not an unsupported action. A device is
+  addressed by all three of `model` + `canbus` + `id` — and **`canbus` is the empty string in
+  simulation**, which is why `&canbus=sim` and every device-name guess failed. The exact shape came
+  out of the JS embedded in `CTRE_PhoenixTools_Sim.dll`:
+  `actionUrl({action, ...{model: d.Model, canbus: d.CANbus, id: d.ID}, ...extra})`.
 
-> **The constraint that shapes everything below: inventory works without hardware; device
-> operations need a real bus.** You cannot develop the interesting half of an MCP against sim if
-> you go through the diagnostic server.
+  Re-measured against **simulated** devices with the right parameters:
+
+  | action | result |
+  | --- | --- |
+  | `getdevices` | works — 16 devices, IDs, models, firmware, licensing |
+  | `blink` | **`Error=0 "No Error"` — works in simulation** |
+  | `setid` + `newid=` | `-109 "Unable to set ID to this device"`, echoes `NewID` — understood, device refuses. Needs hardware. |
+  | `selftest` | `-144 "This feature requires Tuner X."` |
+  | `getconfigs` | `-116 "This diagnostic action is not supported."` |
+
+  Also retracted: "the actions are recognised because the server echoes them." `action=bogusaction`
+  echoes identically. The echo means nothing; the distinct error codes above do.
+
+> **This premise was false and it shaped the whole document.** It read: *"inventory works without
+> hardware; device operations need a real bus. You cannot develop the interesting half against
+> sim."* In fact `blink` works against simulated devices, and `setid` is understood and echoed —
+> the failures were parameter-name mistakes. Running the sim gives you real devices to target.
 
 **CTRE CLI tools** (from docs.ctr-electronics.com/cli-tools.html):
 
 | Tool | What it is |
 | --- | --- |
 | **Corvus** | *Generates mechanisms* — a code generator, **not** a device config tool. Common misconception; check whether its output is useful before building on it. |
-| **Caniv** | Enumerate/configure **CANivore** devices only. No macOS. |
+| **Caniv** | The **CANivore adapter itself** only — confirmed from `caniv --help`: `--list` lists adapters, `--blink` blinks the adapter, `--flash` upgrades the adapter, plus `--name`/`--termination`/`--reset`/`--info`/`--license`. **No way to touch a TalonFX or CANcoder on the bus.** Ships with Tuner X at `%LOCALAPPDATA%\Packages\CTRElectronics.*\LocalCache\caniv.exe`. No macOS. |
 | **Owlet** | Converts `.hoot` logs to other formats. Useful for the tuning phase. |
 | **Phoenix Diagnostic Server** | Backs Tuner X. No macOS. |
 | **Passerine** | MIDI → CHRP. Irrelevant. |

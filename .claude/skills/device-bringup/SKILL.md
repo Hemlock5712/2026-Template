@@ -22,41 +22,56 @@ know those.
 
 ## 1. See what is on the bus
 
-The robot program runs a Phoenix diagnostic server on port **1250**. It answers plain HTTP while
-the program is running — in sim and on the robot — so inventory needs no tool at all:
+The running robot program hosts a Phoenix diagnostic server on port **1250** — the same one Tuner X
+drives. [tools/devices.py](tools/devices.py) talks to it. **The robot or sim must be running.**
 
-```bash
-curl -s "http://localhost:1250/?action=getdevices"        # sim
-curl -s "http://10.TE.AM.2:1250/?action=getdevices"       # on the robot
+```powershell
+python tools/devices.py list                   # local sim
+python tools/devices.py --host 10.TE.AM.2 list # a real robot
 ```
 
 ```
-ID= 31  Talon FX vers. C   fw=26.50.0.0 (Phoenix 6)  pro=True
-ID= 32  CANCoder vers. H   fw=26.50.0.0 (Phoenix 6)  pro=True
+16 devices
+vendordep 26.50.0-alpha-1 expects firmware 26.50.0.x
+
+  ID   0  Talon FX vers. C       26.50.0.0 (Phoenix 6)   <- ID 0 - factory default, probably the one you just plugged in
+  ID  31  Talon FX vers. C       26.50.0.0 (Phoenix 6)
+  ID  32  CANCoder vers. H       26.50.0.0 (Phoenix 6)
 ```
 
-Each entry has `ID`, `Model`, `CurrentVers` (firmware), `IsPROLicensed` and `SupportsConfigs`, plus
-a bus-wide `BusUtilPerc`. **A brand-new device sits at ID 0** — that is almost always the thing you
-just plugged in. Duplicate IDs show up here too.
-
-**Firmware check:** diff `CurrentVers` against the pinned vendordep in
-[vendordeps/](vendordeps/) — `26.50.0-alpha-1` there means `26.50.0.0` on the device. Fix a
-mismatch before anything else; wrong firmware wastes hours further down.
+It flags **ID 0** (factory default — almost always the thing you just plugged in), duplicate IDs,
+and any firmware that does not match the pinned vendordep. Fix a firmware mismatch before anything
+else; it wastes hours further down.
 
 > In **simulation** this lists only devices the code constructed, so it cannot discover something
 > new. On hardware it enumerates the real bus.
 
-Per-device actions (`selftest`, `getconfigs`, `setid`, `blink`) return `Error: -120` in sim. Do not
-read that as "supported but no device": `action=bogusaction` returns exactly the same thing, so the
-response says nothing about which actions exist. **Whether they work over HTTP against real
-hardware is untested.** Until someone checks, blink and set IDs in Tuner X.
+## 2. Identify it, then give it an ID
 
-## 2. The one-time device setup (Tuner X)
+```powershell
+python tools/devices.py blink 0      # which physical device is flashing?
+python tools/devices.py setid 0 31   # that one becomes ID 31
+```
 
-1. Update firmware to match the vendordep, if step 1 found a mismatch.
-2. Blink it so you can see which physical device you're about to configure, then assign the CAN ID.
-3. **A CANcoder used as a TalonFX's feedback source must be on the same CAN bus as that TalonFX.**
-   Nothing in code stops you splitting them; it just fails on hardware.
+| Action | Where it stands |
+| --- | --- |
+| `blink` | **Works**, verified against a simulated device (`Error=0`) |
+| `setid` | Request is understood and `newid` echoed back; a *simulated* device refuses with `-109`. **Unverified on hardware** — fall back to Tuner X if it fails |
+| `selftest` | Not available over HTTP: `-144 "This feature requires Tuner X."` |
+| `getconfigs` | Not available over HTTP: `-116` |
+| firmware update | Tuner X |
+
+A device is addressed by **`model` + `canbus` + `id`, all three** — and `canbus` is the *empty
+string* in simulation. Get any of them wrong and the server answers `-120 "Specified device was
+not found"`, which reads like "unsupported action" but is not; `action=bogusaction` returns the
+same thing. `devices.py` looks all three up for you.
+
+`caniv.exe` (ships with Tuner X) does **not** help here — `--list`, `--blink` and `--flash` all act
+on the CANivore adapter itself, not on devices attached to its bus.
+
+Last thing before you write code: **a CANcoder used as a TalonFX's feedback source must be on the
+same CAN bus as that TalonFX.** Nothing in code stops you splitting them; it just fails on
+hardware.
 
 ## 3. Write a BARE subsystem — devices only, no config
 

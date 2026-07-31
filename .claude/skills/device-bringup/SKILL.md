@@ -46,8 +46,10 @@ mismatch before anything else; wrong firmware wastes hours further down.
 > In **simulation** this lists only devices the code constructed, so it cannot discover something
 > new. On hardware it enumerates the real bus.
 
-Per-device actions (`selftest`, `getconfigs`, `setid`, `blink`) are recognised by the server but
-return `Error: -120` against simulated devices — use Tuner X for those.
+Per-device actions (`selftest`, `getconfigs`, `setid`, `blink`) return `Error: -120` in sim. Do not
+read that as "supported but no device": `action=bogusaction` returns exactly the same thing, so the
+response says nothing about which actions exist. **Whether they work over HTTP against real
+hardware is untested.** Until someone checks, blink and set IDs in Tuner X.
 
 ## 2. The one-time device setup (Tuner X)
 
@@ -56,10 +58,27 @@ return `Error: -120` against simulated devices — use Tuner X for those.
 3. **A CANcoder used as a TalonFX's feedback source must be on the same CAN bus as that TalonFX.**
    Nothing in code stops you splitting them; it just fails on hardware.
 
-## 3. Write the subsystem
+## 3. Write a BARE subsystem — devices only, no config
 
-`BringUp` can only measure devices the robot program has constructed, so the subsystem comes first
-— see the **`add-a-mechanism`** skill. Name the wrappers, because the names are what get matched:
+Here is the trap: you cannot write the real subsystem yet. The gear ratio, the sensor direction and
+the zero are exactly the numbers you do not know, and the powered sweep in step 6 drives the
+mechanism *under closed loop using those numbers*. Guess them and the first powered move is the one
+that breaks something.
+
+So split it. `BringUp` only needs the devices to exist — not gains, not feedback config, not
+commands:
+
+```java
+public class Wrist extends Mechanism {
+  private final LoggedTalonFX motor = new LoggedTalonFX(41, TunerConstants.kCANBus, "Wrist");
+  private final LoggedCANcoder encoder = new LoggedCANcoder(42, TunerConstants.kCANBus, "Wrist");
+}
+```
+
+plus one line in [Robot.java](src/main/java/frc/robot/Robot.java): `public final Wrist wrist = new
+Wrist();`. That is the whole thing. Nothing to get wrong, because there are no numbers in it yet.
+
+Name the wrappers carefully — the names are what get matched:
 
 | Wrapper name | Meaning |
 | --- | --- |
@@ -67,7 +86,19 @@ return `Error: -120` against simulated devices — use Tuner X for those.
 | `LoggedTalonFX(33, bus, "Arm/2")` | a **follower** of `"Arm"` — measured against the leader's rotor, so it should read ±1 |
 | `LoggedTalonFX(21, bus, "Flywheel")` | motor with no sensor and no leader — checked as a velocity loop |
 
-## 4. Measuring: `BringUp`
+## 4. Measure it DISABLED, by hand
+
+In sim, record a fixed-length disabled log with:
+
+```powershell
+./gradlew simulateJavaAgent -Pmode=disabled -PstopAfter=20
+```
+
+On the robot: deploy, and **leave it disabled**. Motors cannot actuate, sensors still read, and the log is
+still written — so move the mechanism through as much of its range as you can *by hand* and you get
+the gear ratio, the sensor direction and the zero with nothing powered and nothing to guess.
+
+This is the step that makes the real subsystem writable. Do it before you set a single gain.
 
 [BringUp.java](src/main/java/frc/robot/hardware/BringUp.java) runs every loop, in every mode, in
 sim and on hardware, and records to the log:

@@ -29,6 +29,31 @@ public final class SimStartup {
   // transition. Without one, replay never starts the OpMode's commands.
   private static final double ENABLE_DELAY_SECONDS = 1.5;
 
+  /**
+   * Optional self-destruct, so a scripted run (replayCheck, CI, a bring-up log) ends on its own.
+   */
+  private static void armStopTimer() {
+    double stopAfter = Double.parseDouble(System.getProperty("frc.sim.stopAfterSeconds", "0"));
+    if (stopAfter <= 0) {
+      return;
+    }
+    Thread timer =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep((long) (stopAfter * 1000));
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+              System.out.println("[SimStartup] stopAfterSeconds reached; exiting.");
+              System.exit(0);
+            },
+            "SimStopTimer");
+    timer.setDaemon(true);
+    timer.start();
+  }
+
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
   public static void arm() {
     // REPLAY is also "simulation", but there the DS state comes from the log - enabling it here
@@ -36,6 +61,10 @@ public final class SimStartup {
     if (RunMode.current() != RunMode.SIM) {
       return;
     }
+
+    // Before the mode check: a disabled run is still a scripted run. Recording a bring-up log by
+    // hand-moving a mechanism never enables the robot, and without this it never exits either.
+    armStopTimer();
 
     String spec = System.getProperty("frc.sim.startMode", "").trim();
     if (spec.isEmpty() || spec.equalsIgnoreCase("disabled")) {
@@ -145,26 +174,6 @@ public final class SimStartup {
             "SimEnableDelay");
     enable.setDaemon(true);
     enable.start();
-
-    // Optional self-destruct, so a scripted run (replayCheck, CI) ends on its own.
-    double stopAfter = Double.parseDouble(System.getProperty("frc.sim.stopAfterSeconds", "0"));
-    if (stopAfter > 0) {
-      Thread timer =
-          new Thread(
-              () -> {
-                try {
-                  Thread.sleep((long) (stopAfter * 1000));
-                } catch (InterruptedException e) {
-                  Thread.currentThread().interrupt();
-                  return;
-                }
-                System.out.println("[SimStartup] stopAfterSeconds reached; exiting.");
-                System.exit(0);
-              },
-              "SimStopTimer");
-      timer.setDaemon(true);
-      timer.start();
-    }
 
     System.out.println(
         "[SimStartup] Headless start: enabled=true mode="

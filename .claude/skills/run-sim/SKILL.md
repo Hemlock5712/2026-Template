@@ -55,7 +55,8 @@ falls back rather than sitting silently disabled.
 | `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). Runs **"Stow"** — arm only, no drivetrain, so it's the clean way to isolate mechanism behavior. |
 | `-Pmode=utility:Bring-Up` | Sweep the arm through its presets with the flywheel spinning, to measure gear ratio / kG / kV. See the `device-bringup` skill. |
 | `-Pmode=<mode>:<name>` | Pick the OpMode of `<mode>` whose annotation `name` matches `<name>`. |
-| `-PstopAfter=<seconds>` | Exit on its own after N seconds. Without it the sim runs until killed, so scripts and CI need this. |
+| `-PstopAfter=<seconds>` | Exit on its own after N seconds. Without it the sim runs until killed, so scripts and CI need this. Works with `-Pmode=disabled` too. |
+| `-Pmode=disabled -PstopAfter=<n>` | Record a fixed-length log with the robot **never enabled** — the disabled first pass of the `device-bringup` skill. |
 | (omitted / `-Pmode=disabled`) | Stay disabled. |
 
 The robot **stays disabled for the first 1.5 s**, then enables. That is deliberate: an OpMode only
@@ -120,8 +121,9 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
   stable in sim can behave differently on hardware, and vice versa. Treat sim gains as a starting
   point.
 - **"CAN message is stale" spam at startup** is normal in sim while signals spin up — ignore it.
-- **No log-replay.** AdvantageKit here is logging-only (no IO layer); there is no `-Preplay`. You
-  re-run the sim to test a change, then compare logs.
+- **Sim cannot test follower direction.** Phoenix slaves a simulated follower's rotor to its
+  leader and ignores the `Follower` request's `MotorAlignmentValue`, so a reversed follower still
+  reads as turning with its leader. Verify that on hardware.
 - **Gradle needs a Java 25 JDK.** If you see `invalid source release: 25`, point Gradle at the
   WPILib 2027 toolchain JDK (`-Dorg.gradle.java.home=...` or `org.gradle.java.home` in
   `gradle.properties`). Building from the WPILib VS Code extension handles this for you.

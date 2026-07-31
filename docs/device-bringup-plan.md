@@ -27,10 +27,14 @@ run, sim included.
 - `GET /?action=getdevices` **works in simulation**. Returned all 16 simulated devices with
   `ID`, `Model`, `CurrentVers` (firmware), `HardwareRev`, `BootloaderRev`, `SoftStatus`
   (`"Simulated Device."`), `IsPROLicensed`, `SupportsConfigs`, plus `BusUtilPerc`.
-- Per-device actions `selftest`, `getconfigs`, `config`, `blink`, `setid` are all **recognised**
-  (the server echoes the action rather than rejecting it) but return
+- Per-device actions `selftest`, `getconfigs`, `config`, `blink`, `setid` return
   `Error: -120, "Specified device was not found"` against simulated devices. Adding `&canbus=sim`
   or a device name does not help.
+- **Correction (2026-07-31):** this note used to read that those actions were "recognised, since
+  the server echoes the action rather than rejecting it." That inference was wrong — `action=
+  bogusaction` gets the same echo and the same -120. The device lookup fails before the action is
+  ever dispatched, so the response says nothing about which actions exist. Whether `blink` and
+  `setid` work over HTTP is still **unknown** and still needs a real device.
 
 > **The constraint that shapes everything below: inventory works without hardware; device
 > operations need a real bus.** You cannot develop the interesting half of an MCP against sim if

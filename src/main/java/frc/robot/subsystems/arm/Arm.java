@@ -97,7 +97,7 @@ public class Arm extends Mechanism {
   // THE ONE RULE: a hold never finishes, so never WAIT on a hold - it sticks in a sequence
   // forever. Need a finish line? Add it at the call site:
   //
-  //   arm.scoring().until(arm::isAtTarget)   // finishes when the arm arrives
+  //   arm.scoring().until(arm::atScoring)   // finishes when the arm arrives
   //
   // The "(hold)" in each name shows up on the dashboard and in logs - a stuck sequence sitting
   // on a "(hold)" is the bug.
@@ -117,16 +117,38 @@ public class Arm extends Mechanism {
     return runRepeatedly(() -> setPosition(SCORING_POSITION)).named("scoring (hold)");
   }
 
+  // You have to NAME the pose you are waiting for. There is no isAtTarget(): a no-argument version
+  // asks the motor "are you there yet" without saying where "there" is, and chained moves then
+  // read the PREVIOUS move's answer and finish instantly.
+
+  /** True once the arm has stopped at the vertical (stowed) position. */
+  public boolean atVertical() {
+    return isAt(VERTICAL_POSITION);
+  }
+
+  /** True once the arm has stopped at the horizontal (ground intake) position. */
+  public boolean atHorizontal() {
+    return isAt(HORIZONTAL_POSITION);
+  }
+
+  /** True once the arm has stopped at the scoring position. */
+  public boolean atScoring() {
+    return isAt(SCORING_POSITION);
+  }
+
   /**
-   * True when the arm has reached its target angle. Both halves matter: the motor's own
-   * "MotionMagicAtTarget" says the planned move has finished (and is false before anything commands
-   * the arm at all, so this can't report success at startup), and the closed-loop error says the
-   * arm really is there and not just tracking a plan that ended.
+   * True when the arm is within tolerance of {@code goalRotations} <i>and</i> Motion Magic has
+   * finished its plan. Both halves matter: the motor's "MotionMagicAtTarget" rules out arriving
+   * while still slewing through the goal (and is false before anything commands the arm, so this
+   * can't report success at startup), and comparing measured position to the goal you pass in is
+   * what makes it safe to chain moves.
+   *
+   * <p>Not closed-loop error - that is the miss against the profile's <i>moving</i> setpoint, which
+   * sits near zero for the whole move and so never tells you the arm arrived.
    */
-  @AutoLogOutput(key = "Arm/AtTarget")
-  public boolean isAtTarget() {
+  public boolean isAt(double goalRotations) {
     return motor.getMotionMagicAtTarget()
-        && Math.abs(motor.getClosedLoopError()) <= TOLERANCE.in(Rotations);
+        && Math.abs(getPosition().in(Rotations) - goalRotations) <= TOLERANCE.in(Rotations);
   }
 
   /** Where the arm is right now, in degrees. Logged so you can graph it in AdvantageScope. */

@@ -40,7 +40,7 @@ public class DriveStowDriveOpMode extends PeriodicOpMode {
                 new DriveToPose(robot.drivetrain, pose1),
 
                 // Stow is a hold - .until(...) gives it a finish line at the stow angle.
-                robot.stow().until(robot.arm::isAtTarget).named("stow until stowed"),
+                robot.stow().until(robot.arm::atVertical).named("stow until stowed"),
 
                 // Leg 2 WHILE holding stow: the drive finishes, the race cancels the hold.
                 Command.race(new DriveToPose(robot.drivetrain, pose2), robot.stow())

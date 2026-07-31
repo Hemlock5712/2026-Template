@@ -31,8 +31,8 @@ public class BringUpOpMode extends PeriodicOpMode {
   public BringUpOpMode(Robot robot) {
     // Three presets, so the arm travels far enough that the ratio isn't sensor noise.
     //
-    // Timed, NOT .until(arm::isAtTarget): chaining two arm moves back to back, the second one sees
-    // the first one's MotionMagicAtTarget still latched true and finishes instantly.
+    // Timed rather than .until(arm::atVertical): every pose has to sit STILL long enough for its
+    // holding voltage to settle, or there is no kG to measure.
     Command sweep =
         Command.sequence(
                 dwell(robot.arm.vertical(), "at vertical"),

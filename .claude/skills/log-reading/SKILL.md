@@ -61,11 +61,10 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/RealOutputs/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
 | `/RealOutputs/Arm/AngleDegrees` | `double` | Measured arm angle. **0° = straight out horizontally** (the `Arm_Cosine` frame), so the presets read: scoring ≈ 30°, **stow = 90°**, intake = 180°. Stow is not 0. |
 | `/RealOutputs/Arm/TargetDegrees` | `double` | Angle the arm is driving toward — graph against `AngleDegrees` |
-| `/RealOutputs/Arm/AtTarget` | `boolean` | `Arm.isAtTarget()`; what the stow autos wait on |
 | `/RealOutputs/BringUp/Arm/BestMeasuredRatio` | `double` | Measured rotor:mechanism ratio, signed. `NaN` until the arm has moved. See the `device-bringup` skill |
 | `/RealOutputs/BringUp/Arm/MagnetOffsetDelta` | `double` | Add to the CANcoder's `MagnetOffset` to zero it where the arm stopped |
 | `/RealOutputs/Flywheel/SpeedRps` | `double` | Measured wheel speed, rotations/sec (target is 25) |
-| `/RealOutputs/Flywheel/AtTarget` | `boolean` | `Flywheel.isAtTarget()` |
+| `/RealOutputs/Flywheel/AtTarget` | `boolean` | `Flywheel.isAtTarget()` — measured speed within tolerance of 25 rps. The arm has no equivalent key: it has three poses, so it has `atVertical()` / `atHorizontal()` / `atScoring()` instead. Graph `Arm/AngleDegrees` against `Arm/TargetDegrees` |
 | `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state. **Only written by the "State Machine (no driving)" teleop** — it never appears in an autonomous log. |
 
 Also present, logged by AdvantageKit itself (all verified in a real sim log):

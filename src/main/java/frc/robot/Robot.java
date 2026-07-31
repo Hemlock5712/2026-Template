@@ -113,8 +113,7 @@ public class Robot extends OpModeRobot {
    */
   public Command autoScore() {
     return Command.parallel(
-            arm.scoring().until(arm::isAtTarget).named("scoring until at target"),
-            flywheel.spinUp())
+            arm.scoring().until(arm::atScoring).named("scoring until at target"), flywheel.spinUp())
         .named("AutoScore (hold)");
   }
 }

@@ -19,6 +19,7 @@ from wpiutil.log import DataLogReader
 ARM_STILL_RPS = 0.02  # below this the arm counts as holding, not moving
 MIN_DWELL_S = 0.5  # ignore momentary pauses
 FLYWHEEL_SETTLE_RPS = 0.2  # below this much change the wheel counts as up to speed
+COARSE_TRAVEL_ROT = 0.1  # under this, say how rough the ratio is rather than implying precision
 
 
 def read(path, keys):
@@ -84,13 +85,16 @@ def mean(rows, key):
 
 
 ENABLED = "/DriverStation/Enabled"
+# Phoenix reports rotations, so the angle stays in rotations all the way to cos(). Degrees appear
+# in the printout only, because nobody pictures an arm at 0.083 rot.
+ANGLE_ROT = "/Hardware/CANcoder/Arm/PositionRot"
 
 ARM_KEYS = [
     ENABLED,
+    ANGLE_ROT,
     "/RealOutputs/BringUp/Arm/BestMeasuredRatio",
     "/RealOutputs/BringUp/Arm/SensorTravelRot",
     "/RealOutputs/BringUp/Arm/MagnetOffsetDelta",
-    "/RealOutputs/Arm/AngleDegrees",
     "/Hardware/TalonFX/Arm/AppliedVolts",
     "/Hardware/TalonFX/Arm/VelocityRps",
 ]
@@ -109,6 +113,9 @@ def arm_report(series):
         print(f"  no ratio: only {travel:.3f} rot of travel. Move the mechanism further.")
     else:
         print(f"  rotor:mechanism ratio = {ratios[-1]:.2f}   (measured over {travel:.2f} rot)")
+        if travel < COARSE_TRAVEL_ROT:
+            # Encoder resolution divided by travel - fine for 50 vs 25, not for 50 vs 49.
+            print(f"    coarse: good to about {100 / (travel * 4096):.0f}%. Move it further to sharpen.")
 
     offsets = series["/RealOutputs/BringUp/Arm/MagnetOffsetDelta"]
     if offsets:
@@ -129,12 +136,12 @@ def arm_report(series):
     print("  holding voltage by pose:")
     for rows in holds:
         settled = rows[len(rows) // 2 :]  # drop the approach, keep the settled half
-        angle = mean(settled, "/RealOutputs/Arm/AngleDegrees")
+        rot = mean(settled, ANGLE_ROT)
         volts = mean(settled, "/Hardware/TalonFX/Arm/AppliedVolts")
-        cos = math.cos(math.radians(angle))
+        cos = math.cos(2 * math.pi * rot)
         num += volts * cos
         den += cos * cos
-        print(f"    {angle:7.1f} deg   {volts:+.3f} V")
+        print(f"    {rot:+.4f} rot ({360 * rot:6.1f} deg)   {volts:+.3f} V")
     if den > 1e-6:
         print(f"  kG (fit of V = kG*cos(angle) over those poses) = {num / den:.3f}")
 

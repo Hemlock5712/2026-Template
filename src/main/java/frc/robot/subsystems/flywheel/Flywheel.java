@@ -65,6 +65,8 @@ public class Flywheel extends Mechanism {
 
   // Holds never finish - never make a sequence wait on one. Need a finish line? Add it at the
   // call site: flywheel.spinUp().until(flywheel::isAtTarget). (Full rule in Arm.java.)
+  //
+  // One speed, so one predicate. The arm has three poses and so names each one - see Arm.isAt.
 
   /** Command the flywheel to shooting speed and hold it there. Never finishes. */
   public Command spinUp() {
@@ -76,10 +78,16 @@ public class Flywheel extends Mechanism {
     return runRepeatedly(() -> setVelocity(0.0)).named("stop (hold)");
   }
 
-  /** True when the flywheel is within tolerance of its commanded speed. */
+  /**
+   * True when the wheel is actually up to shooting speed.
+   *
+   * <p>Not closed-loop error: Motion Magic ramps the speed setpoint, so the error against that
+   * moving setpoint stays near zero for the whole spin-up and reports "ready" at a standstill.
+   */
   @AutoLogOutput(key = "Flywheel/AtTarget")
   public boolean isAtTarget() {
-    return Math.abs(motor.getClosedLoopError()) <= tolerance.in(RotationsPerSecond);
+    return Math.abs(motor.getVelocityRps() - SHOOTING_SPEED_RPS)
+        <= tolerance.in(RotationsPerSecond);
   }
 
   /** How fast the wheel is actually spinning, in rotations per second. */

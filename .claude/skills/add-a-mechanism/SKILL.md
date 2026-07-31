@@ -66,21 +66,42 @@ public Command scoring() {
 obvious on the dashboard. Never add an "...AndWait" variant; the finish line goes at the call site
 with `.until(...)`. See "Holds never finish" in [ONBOARDING.md](ONBOARDING.md).
 
-### 4. Write `isAtTarget()`
+### 4. Write an "arrived" test — one per goal, never a bare `isAtTarget()`
 
-Ask the motor controller, don't mirror state in Java. For a Motion Magic **position** mechanism:
+**Compare the measured position against the goal you pass in.** For a Motion Magic **position**
+mechanism (see `Arm`):
 
 ```java
-return motor.getMotionMagicAtTarget().getValue()
-    && Math.abs(motor.getClosedLoopError().getValueAsDouble()) <= TOLERANCE.in(Rotations);
+public boolean atScoring() {
+  return isAt(SCORING_POSITION);
+}
+
+public boolean isAt(double goalRotations) {
+  return motor.getMotionMagicAtTarget()
+      && Math.abs(getPosition().in(Rotations) - goalRotations) <= TOLERANCE.in(Rotations);
+}
 ```
 
-`getMotionMagicAtTarget()` is false before anything commands the mechanism, which is what stops a
-routine reading "already arrived" at startup and skipping its wait. For **velocity**, compare
-`getClosedLoopError()` to a tolerance (see `Flywheel`).
+For **velocity**, compare `getVelocityRps()` to the commanded speed (see `Flywheel`).
 
-Do **not** use `getClosedLoopReference()` as the target — with Motion Magic that's the profile's
-instantaneous setpoint, not the final goal, so it reads "at target" during the whole travel.
+Two traps, both of which produce a routine that silently skips a step:
+
+- **Never `Math.abs(getClosedLoopError()) <= tolerance`.** Closed-loop error is measured against
+  Motion Magic's *instantaneous* setpoint, which starts at the current position and walks to the
+  goal — so it sits near zero for the whole move and reads "arrived" the moment you command
+  anything. Same reason you can't use `getClosedLoopReference()` as the target. This bit both the
+  arm and the flywheel here before it was caught.
+- **Never a no-argument `isAtTarget()`.** `LoggedHardware.refreshAll()` snapshots every signal once
+  at the top of the loop, and `.until(...)` checks its condition before the command body runs — so
+  on the first loop of a chained move, the motor's `MotionMagicAtTarget` still holds the *previous*
+  move's `true` and the step finishes instantly without moving. Naming the goal in the predicate
+  makes that impossible, because the position comparison can't be stale about where you asked it to
+  go. A remembered `goalRotations` field does **not** fix this — the field is stale on that same
+  first loop.
+
+`getMotionMagicAtTarget()` still earns its place in the `&&`: it is false before anything commands
+the mechanism (so nothing reports success at startup) and it rules out "arrived" firing while the
+mechanism is still slewing through the goal.
 
 ### 5. Add a default command, if idling isn't safe
 
@@ -95,7 +116,7 @@ An arm holding position is fine. A spinning flywheel is not.
 
 ### 6. Give it a simulation model
 
-Without one it never moves in sim, and any routine waiting on `isAtTarget()` hangs. Copy the
+Without one it never moves in sim, and any routine waiting on an "arrived" test hangs. Copy the
 "Simulation only" block at the bottom of `Arm` or `Flywheel`:
 
 ```java

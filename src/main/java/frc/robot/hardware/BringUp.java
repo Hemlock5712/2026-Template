@@ -26,8 +26,12 @@ public final class BringUp {
   // ponytail: always on rather than a bring-up OpMode. Five doubles per pair, and it means every
   // log - sim, match, hand-moved on the bench - already carries the measurement.
 
-  // Below this much mechanism travel the ratio is mostly sensor noise. 0.05 rot = 18 degrees.
-  private static final double MIN_TRAVEL_ROT = 0.05;
+  // Everything here is rotations over rotations, so the ratio is unitless - no conversions.
+  //
+  // A CANcoder position signal steps in 1/4096 rot (measured off a log, not a datasheet), so 0.01
+  // rot of travel makes the ratio good to about 2%, sharpening the further the mechanism moves.
+  // Sized off the signal, not off degrees, because a short-throw wrist never gets many degrees.
+  private static final double MIN_TRAVEL_ROT = 0.01;
 
   private static final Map<String, LoggedTalonFX> MOTORS = new LinkedHashMap<>();
   private static final Map<String, LoggedCANcoder> ENCODERS = new LinkedHashMap<>();
@@ -82,8 +86,9 @@ public final class BringUp {
         baseline.bestRatio = ratio;
       }
 
+      // Rotor travel isn't logged: it's just ratio * sensor travel, and it's already in the log as
+      // Hardware/TalonFX/<name>/RotorPositionRot.
       String key = "BringUp/" + name;
-      Logger.recordOutput(key + "/RotorTravelRot", rotorTravel);
       Logger.recordOutput(key + "/SensorTravelRot", sensorTravel);
       Logger.recordOutput(key + "/MeasuredRatio", ratio);
       Logger.recordOutput(key + "/BestMeasuredRatio", baseline.bestRatio);

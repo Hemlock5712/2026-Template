@@ -63,7 +63,7 @@ constructor taking `(Robot robot)` (or no args). Selecting a mode prints
 | [StateMachineTeleop.java](src/main/java/frc/robot/opmodes/StateMachineTeleop.java) | `@Teleop("State Machine (no driving)")` | The superstructure as a Commands-v3 `StateMachine`: named states (stowed/pickup/prep/scoring), `when(...)` / `whenComplete()` transitions, enter/exit hooks. No drive controls — a superstructure showcase. |
 | [DriveDistanceOpMode.java](src/main/java/frc/robot/opmodes/DriveDistanceOpMode.java) | `@Autonomous("1 - Drive 2 Meters")` | The simplest auto and the first closed loop: one [DriveDistance](src/main/java/frc/robot/commands/DriveDistance.java) with a `.withTimeout(...)` seatbelt. No field frame, no alliance, no profile. |
 | [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java) | `@Autonomous("2 - Drive To Pose")` | Sequences two `DriveToPose` legs with `Command.sequence(...).named(...)`. The sequential group inherits its children's requirement (the drivetrain), and the scheduler hands the drivetrain off between legs. `start()` schedules the routine; `end()` cancels it. |
-| [DriveStowDriveOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveOpMode.java) | `@Autonomous("3 - Drive Stow Drive")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(isAtTarget)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
+| [DriveStowDriveOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveOpMode.java) | `@Autonomous("3 - Drive Stow Drive")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(arm::atVertical)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
 | [UtilityOpMode.java](src/main/java/frc/robot/opmodes/UtilityOpMode.java) | `@Utility("Stow")` | Safe off-field pose (arm vertical, flywheel stopped). `@Utility` is the renamed 2027 "Test" mode. |
 
 Add a routine = add another annotated class. `start()` schedules the command, `end()` cancels it.
@@ -76,7 +76,9 @@ default command when nothing else commands them).
 **Hold convention:** every mechanism command is a persistent `runRepeatedly` hold that **never
 finishes** — the names carry a `(hold)` suffix so this is visible in telemetry. Never put a hold
 somewhere that waits on it (`Command.sequence`, coroutine `await`); to make one step finish, add
-`.until(mech::isAtTarget)` **at the call site** (there are no `...AndWait` methods). The full rule
+`.until(mech::atSomePose)` **at the call site** (there are no `...AndWait` methods) — the predicate
+names the goal, because a no-argument `isAtTarget()` reads the previous move's answer on the first
+loop of a chained move. The full rule
 and the "which composition tool when" table live in `ONBOARDING.md` § "Holds never finish".
 
 ### Drive
@@ -107,7 +109,7 @@ The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `Appl
   `CANcoder` (CAN 32), `MotionMagicVoltage` position control with `Arm_Cosine` gravity FF. Presets:
   `vertical()` (stow), `horizontal()` (intake), `scoring()`. Gains are **tuned against the sim
   plant, not a real arm** — re-tune on hardware. Has a `SingleJointedArmSim` model and logs
-  `Arm/AngleDegrees`, `Arm/TargetDegrees`, `Arm/AtTarget`.
+  `Arm/AngleDegrees`, `Arm/TargetDegrees`.
 - [flywheel/Flywheel.java](src/main/java/frc/robot/subsystems/flywheel/Flywheel.java) — single
   `TalonFX` (CAN 21), `MotionMagicVelocityVoltage`, shooting speed 25 RPS. `spinUp()` / `stop()`,
   with `stop()` as its **default command** (a TalonFX otherwise holds its last command forever).

@@ -141,11 +141,26 @@ Then deploy and re-run the sweep to confirm.
 
 ## Is this hardware, or just sim?
 
-AdvantageKit already logs it — check `/SystemStats/Network/CAN*/Available` and `RX/Packets`. In
-pure simulation every interface reads `Available: false` with zero packets.
+Phoenix loads either its hardware or its simulation natives at startup, and `Utils.isSimulation()`
+reports which — so despite the name, it is **false** in hardware-attached simulation:
 
-Do **not** use `CANBus.getStatus()` or `isNetworkFD()` for this. Phoenix fakes a healthy bus in
-simulation: with nothing plugged in they return `OK` and `true`.
+| | pure sim | hardware-attached sim | SystemCore |
+| --- | --- | --- | --- |
+| `RobotBase.isReal()` | false | false | true |
+| `Utils.isSimulation()` (Phoenix) | **true** | **false** | false |
+| `device.isConnected()` | true always | true iff the device answers | true iff the device answers |
+
+`isConnected()` is the per-device check, and it means nothing in pure sim — a simulated device
+answers even at a CAN ID nothing is configured for. Get into hardware-attached sim with
+`./gradlew simulateJava -PhwSim`.
+
+Do **not** use `CANBus.getStatus()` or `isNetworkFD()`. With nothing plugged in — and even with a
+nonsense bus name — both report a healthy FD bus (`Status=OK`, `isNetworkFD=true`). The failure
+only ever surfaces as a `[phoenix] CANbus Failed to Connect` console line.
+
+**The sim plants cannot fight a real device.** With the hardware natives loaded every
+`TalonFXSimState` setter returns `NotSupported` and does nothing. They do waste a little CPU, since
+`getMotorVoltage()` reads 0.0, so gate `updateSimulation` on the table above if you care.
 
 ## Limits
 

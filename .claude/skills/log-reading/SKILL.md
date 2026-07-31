@@ -13,7 +13,7 @@ through changed code (`run-replay` skill). Two kinds of logs get written:
 | Format | Written by | What's in it |
 | --- | --- | --- |
 | **`.wpilog`** | AdvantageKit (`WPILOGWriter`, wired in [Robot.java](src/main/java/frc/robot/Robot.java)) | Everything passed to `Logger.recordOutput` (all `Drivetrain/*` telemetry), DS state + joysticks, Systemcore system stats, console output |
-| **`.hoot`** | Phoenix 6 / the CANivore, configured in [TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) (`new CANBus("canivore", "./logs/example.hoot")`) | Raw CAN traffic for every Phoenix device (drive/steer TalonFX, CANcoders, Pigeon2, arm, flywheel) at high rate |
+| **`.hoot`** | Phoenix 6 / the CANivore, on by default on real hardware. Path and on/off are `SignalLogger.setPath` / `.start()` / `.enableAutoLogging()` — **not** a `CANBus` argument | Raw CAN traffic for every Phoenix device (drive/steer TalonFX, CANcoders, Pigeon2, arm, flywheel) at high rate |
 
 Start with the `.wpilog` for "what did the robot think/do"; drop to the `.hoot` for low-level
 device signals (applied volts, currents, closed-loop error, CAN health). Note the `.wpilog` records
@@ -27,7 +27,12 @@ at the **50 Hz loop rate** — AdvantageKit keeps one value per key per loop —
 | Sim `.wpilog` | [logs/](logs/) in the project dir — `akit_<random>.wpilog`, renamed to `akit_<yy-MM-dd_HH-mm-ss>.wpilog` once the time is known. Newest is most recent. |
 | Sim `.hoot` | **None is produced.** The path in `TunerConstants` only takes effect with real Phoenix hardware on the bus — a sim run leaves `logs/` with `.wpilog` files only. Don't go looking for applied volts / stator current in sim; they aren't recorded anywhere. |
 | Real robot `.wpilog` | USB drive `/U/logs` (the `WPILOGWriter` default; pass a path to change it). |
-| Real robot `.hoot` | Wherever the `CANBus` log path points; pull via Tuner X. |
+| Real robot `.hoot` | Wherever `SignalLogger.setPath` points (default is a USB drive, else `/home/systemcore/logs`); pull via Tuner X. |
+
+> **Trap:** `new CANBus(name, hootPath)` does *not* configure hoot logging — it calls
+> `HootReplay.loadFile(hootPath)` and **replays** that file instead of reading the real bus.
+> `TunerConstants` used to do this; it only ever worked because the file was missing and the
+> failing load was ignored.
 
 Everything logged is also mirrored **live** to NetworkTables under `/AdvantageKit/...`
 (`NT4Publisher`), so AdvantageScope can watch the same keys in real time.

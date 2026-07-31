@@ -5,10 +5,13 @@
 package frc.robot.hardware;
 
 import com.ctre.phoenix6.BaseStatusSignal;
+import com.ctre.phoenix6.CANBus;
 import frc.robot.utils.RunMode;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -34,26 +37,29 @@ public final class LoggedHardware {
   // Registration order = construction order, so replay reads devices in the same sequence.
   private static final List<Device> ALL = new ArrayList<>();
   private static final Set<String> KEYS = new HashSet<>();
-  private static BaseStatusSignal[] allSignals = new BaseStatusSignal[0];
 
-  static void register(Device device, String logKey) {
+  // ONE BATCH PER CAN BUS. Phoenix's refreshAll takes the bus of the first signal and, if any
+  // other signal is on a different one, marks them all InvalidNetwork and refreshes NOTHING -
+  // silently freezing every sensor on the robot. Mixing buses in one call is not an option.
+  private static final Map<String, List<BaseStatusSignal>> SIGNALS_BY_BUS = new LinkedHashMap<>();
+
+  static void register(Device device, String logKey, CANBus bus) {
     if (!KEYS.add(logKey)) {
       throw new IllegalArgumentException("Two logged devices named \"" + logKey + "\"");
     }
     ALL.add(device);
-
-    List<BaseStatusSignal> collected = new ArrayList<>();
-    for (Device each : ALL) {
-      collected.addAll(List.of(each.signals()));
-    }
-    allSignals = collected.toArray(new BaseStatusSignal[0]);
+    SIGNALS_BY_BUS
+        .computeIfAbsent(bus.getName(), name -> new ArrayList<>())
+        .addAll(List.of(device.signals()));
   }
 
   /** Reads every device and hands its values to the log. Call once, at the top of the loop. */
   public static void refreshAll() {
     if (RunMode.current() != RunMode.REPLAY) {
-      // One bus round trip for the whole robot, instead of one per getter.
-      BaseStatusSignal.refreshAll(allSignals);
+      // One round trip per bus, instead of one per getter.
+      for (List<BaseStatusSignal> busSignals : SIGNALS_BY_BUS.values()) {
+        BaseStatusSignal.refreshAll(busSignals);
+      }
       for (Device device : ALL) {
         device.updateInputs();
       }

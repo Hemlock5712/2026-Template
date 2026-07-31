@@ -44,7 +44,7 @@ public class LoggedCANcoder implements LoggedHardware.Device {
     absolutePosition = device.getAbsolutePosition();
     velocity = device.getVelocity();
 
-    LoggedHardware.register(this, logKey);
+    LoggedHardware.register(this, logKey, bus);
   }
 
   /** True if the encoder answered on CAN this loop. */

@@ -76,7 +76,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     closedLoopError = device.getClosedLoopError();
     motionMagicAtTarget = device.getMotionMagicAtTarget();
 
-    LoggedHardware.register(this, logKey);
+    LoggedHardware.register(this, logKey, bus);
   }
 
   /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */

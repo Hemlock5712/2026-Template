@@ -52,7 +52,7 @@ public class LoggedCANrange implements LoggedHardware.Device {
     detected = device.getIsDetected();
     signalStrength = device.getSignalStrength();
 
-    LoggedHardware.register(this, logKey);
+    LoggedHardware.register(this, logKey, bus);
   }
 
   /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */

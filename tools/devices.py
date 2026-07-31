@@ -109,9 +109,13 @@ def cmd_setid(args):
     code, message = act(args.host, device, "setid", newid=args.new)
     if code == 0:
         print("Done. Update the LoggedTalonFX/LoggedCANcoder id in the subsystem to match.")
-    else:
-        # -109 is what a simulated device returns; it cannot take an ID change.
-        sys.exit(f"setid failed: {code} {message}")
+        return
+    if code == -109 and device.get("SoftStatus", "").startswith("Simulated"):
+        sys.exit(
+            "setid failed: this is a simulated device. Simulated devices always refuse an ID"
+            " change - there is no non-volatile storage to write it into. Needs real hardware."
+        )
+    sys.exit(f"setid failed: {code} {message}")
 
 
 def main():

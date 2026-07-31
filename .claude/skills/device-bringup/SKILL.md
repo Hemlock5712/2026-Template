@@ -56,7 +56,7 @@ python tools/devices.py setid 0 31   # that one becomes ID 31
 | Action | Where it stands |
 | --- | --- |
 | `blink` | **Works**, verified against a simulated device (`Error=0`) |
-| `setid` | Request is understood and `newid` echoed back; a *simulated* device refuses with `-109`. **Unverified on hardware** — fall back to Tuner X if it fails |
+| `setid` | **Cannot be tested in simulation** — a simulated device always refuses with `-109`, having no non-volatile storage to write an ID into. Addressing is proven correct (the same parameters blink fine) and `newid` is echoed back, so only real silicon can confirm it. Fall back to Tuner X if it fails |
 | `selftest` | Not available over HTTP: `-144 "This feature requires Tuner X."` |
 | `getconfigs` | Not available over HTTP: `-116` |
 | firmware update | Tuner X |

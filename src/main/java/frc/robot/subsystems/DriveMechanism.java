@@ -9,6 +9,7 @@ import frc.robot.generated.TunerConstants;
 import frc.robot.hardware.LoggedSwerveDrivetrain;
 import frc.robot.utils.RunMode;
 import java.util.function.Supplier;
+import org.littletonrobotics.junction.Logger;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
@@ -43,6 +44,9 @@ public class DriveMechanism extends Mechanism {
 
   /** Applies a swerve request directly - for commands that already require this mechanism. */
   public void setControl(SwerveRequest request) {
+    // Logged either way, so a replay can show which request the code chose even though there is
+    // no drivetrain to send it to.
+    Logger.recordOutput("Drivetrain/Request", request.getClass().getSimpleName());
     if (RunMode.current() == RunMode.REPLAY) {
       return;
     }

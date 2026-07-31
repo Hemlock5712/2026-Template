@@ -25,6 +25,10 @@ public final class SimStartup {
   private static final String DEFAULT_TELEOP = "Teleop";
   private static final String DEFAULT_UTILITY = "Stow";
 
+  // Stay disabled this long before enabling, so the log contains a disabled -> enabled
+  // transition. Without one, replay never starts the OpMode's commands.
+  private static final double ENABLE_DELAY_SECONDS = 1.5;
+
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
   public static void arm() {
     // REPLAY is also "simulation", but there the DS state comes from the log - enabling it here
@@ -115,13 +119,52 @@ public final class SimStartup {
       return;
     }
 
-    // Both setRobotMode and setOpMode are required - the opmode id combines the two and won't
-    // match without the mode bits.
+    // Select the opmode straight away, but stay DISABLED for a moment before enabling.
+    //
+    // A real robot always boots disabled and is enabled later, and OpModes only schedule their
+    // commands on that disabled -> enabled transition. Enabling in the same instant we start
+    // produces a log that is already enabled on its first entry, and replaying it never sees the
+    // transition - so no command ever runs and the replay silently does nothing.
     DriverStationSim.setDsAttached(true);
     DriverStationSim.setRobotMode(mode);
     DriverStationSim.setOpMode(chosen.id);
-    DriverStationSim.setEnabled(true);
     DriverStationSim.notifyNewData();
+
+    Thread enable =
+        new Thread(
+            () -> {
+              try {
+                Thread.sleep((long) (ENABLE_DELAY_SECONDS * 1000));
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+              }
+              DriverStationSim.setEnabled(true);
+              DriverStationSim.notifyNewData();
+            },
+            "SimEnableDelay");
+    enable.setDaemon(true);
+    enable.start();
+
+    // Optional self-destruct, so a scripted run (replayCheck, CI) ends on its own.
+    double stopAfter = Double.parseDouble(System.getProperty("frc.sim.stopAfterSeconds", "0"));
+    if (stopAfter > 0) {
+      Thread timer =
+          new Thread(
+              () -> {
+                try {
+                  Thread.sleep((long) (stopAfter * 1000));
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                  return;
+                }
+                System.out.println("[SimStartup] stopAfterSeconds reached; exiting.");
+                System.exit(0);
+              },
+              "SimStopTimer");
+      timer.setDaemon(true);
+      timer.start();
+    }
 
     System.out.println(
         "[SimStartup] Headless start: enabled=true mode="

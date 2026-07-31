@@ -105,7 +105,16 @@ test {
 // SimStartup.java reads the frc.sim.startMode system property wired below; see the run-sim skill.
 def runningAgentSim = gradle.startParameter.taskNames.any { it.endsWith('simulateJavaAgent') }
 // Replay: ./gradlew replayJava -Preplay=logs/akit_<stamp>.wpilog  (see the run-replay skill)
-def replayLog = (project.findProperty('replay') ?: '').toString()
+def wantsReplay = gradle.startParameter.taskNames.any { it.toLowerCase().contains('replay') }
+def newestLog = {
+    def dir = file('logs')
+    if (!dir.isDirectory()) return ''
+    def newest = dir.listFiles().findAll { it.name.endsWith('.wpilog') && !it.name.endsWith('_replay.wpilog') }
+                    .max { it.lastModified() }
+    return newest ? newest.path : ''
+}
+// -Preplay=<log>, or the newest recording in ./logs when a replay task was asked for.
+def replayLog = (project.findProperty('replay') ?: (wantsReplay ? newestLog() : '')).toString()
 def headless = runningAgentSim || replayLog || project.hasProperty('headless')
 
 // In headless mode, skip the Swing GUI and the socket DriverStation so nothing competes with the
@@ -120,6 +129,9 @@ if (!headless) {
 def simStartMode = (project.findProperty('mode') ?: (runningAgentSim ? 'auto' : '')).toString()
 tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach {
     systemProperty 'frc.sim.startMode', simStartMode
+    if (project.hasProperty('stopAfter')) {
+        systemProperty 'frc.sim.stopAfterSeconds', project.property('stopAfter').toString()
+    }
     if (replayLog) {
         systemProperty 'frc.replay', file(replayLog).absolutePath
         // Put our classes ahead of the fat jar so src/main/java/org/wpilib/** overrides the stock
@@ -227,6 +239,16 @@ tasks.register('checkReplaySafety') {
                 }
             }
         }
+        // Phoenix's clock is not redirected by AdvantageKit, so code timing itself with it runs at
+        // wall-clock speed during replay and never finishes. Sim physics pacing is the exception.
+        tree.matching { exclude 'subsystems/CommandSwerveDrivetrain.java' }.each { f ->
+            f.eachLine { line, n ->
+                if (line.trim().startsWith('//')) return
+                if (line.contains('Utils.getCurrentTimeSeconds')) {
+                    offenders << "  ${f.name}:${n}   Utils.getCurrentTimeSeconds() - use RobotController.getTimestamp()"
+                }
+            }
+        }
         if (offenders) {
             throw new GradleException(
                 "Raw Phoenix devices outside frc/robot/hardware:\n"
@@ -238,3 +260,22 @@ tasks.register('checkReplaySafety') {
 }
 
 check.dependsOn 'checkReplaySafety'
+
+// Replay regression check. Record a log, then replay it through this build and confirm every
+// output comes out the same. See the run-replay skill.
+//   ./gradlew simulateJavaAgent -PstopAfter=20
+//   ./gradlew replayCheck
+// replayCheck reuses -Preplay=<log> if given, otherwise the newest log in ./logs.
+tasks.register('replayCheck', JavaExec) {
+    group = 'verification'
+    description = 'Replays a log and fails if the outputs differ from the recording.'
+    dependsOn 'replayJava', 'testClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'frc.robot.ReplayCheck'
+    doFirst {
+        if (!replayLog) {
+            throw new GradleException('No log found. Record one first: ./gradlew simulateJavaAgent -PstopAfter=20')
+        }
+        args file(replayLog).absolutePath.replaceFirst(/\.wpilog$/, '_replay.wpilog')
+    }
+}

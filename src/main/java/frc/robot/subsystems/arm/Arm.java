@@ -148,9 +148,6 @@ public class Arm extends Mechanism {
   }
 
   private void setPosition(double rotations) {
-    if (RunMode.current() == RunMode.REPLAY) {
-      return;
-    }
     motor.setControl(positionOut.withPosition(rotations));
   }
 

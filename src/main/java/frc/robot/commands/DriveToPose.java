@@ -4,7 +4,6 @@
 
 package frc.robot.commands;
 
-import com.ctre.phoenix6.Utils;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.ctre.phoenix6.swerve.utility.LinearPath;
@@ -15,6 +14,7 @@ import org.wpilib.math.controller.PIDController;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.trajectory.TrapezoidProfile;
+import org.wpilib.system.RobotController;
 
 /**
  * Drive in a straight line to a field pose using odometry - the odometry twin of {@link DriveToTag}
@@ -70,7 +70,9 @@ public class DriveToPose extends ClassicCommand {
   protected void initialize() {
     activeGoal = AllianceFlip.apply(goal);
     startState = new LinearPath.State(drivetrain.getPose(), drivetrain.getFieldVelocity());
-    startTime = Utils.getCurrentTimeSeconds();
+    // RobotController, not Phoenix's Utils: AdvantageKit redirects this clock to the log's
+    // timestamps during replay, so a path takes the same time it did on the robot.
+    startTime = RobotController.getTime() / 1.0e6;
     xController.reset();
     yController.reset();
     headingController.reset();
@@ -78,7 +80,7 @@ public class DriveToPose extends ClassicCommand {
 
   @Override
   protected void execute() {
-    double t = Utils.getCurrentTimeSeconds() - startTime;
+    double t = RobotController.getTime() / 1.0e6 - startTime;
     LinearPath.State setpoint = path.calculate(t, startState, activeGoal);
 
     Pose2d measuredPose = drivetrain.getPose();
@@ -98,7 +100,7 @@ public class DriveToPose extends ClassicCommand {
   /** Done when the profile's total time has elapsed. */
   @Override
   protected boolean isFinished() {
-    return path.isFinished(Utils.getCurrentTimeSeconds() - startTime);
+    return path.isFinished(RobotController.getTime() / 1.0e6 - startTime);
   }
 
   /** Stops the drivetrain. Runs on both finish and interruption. */

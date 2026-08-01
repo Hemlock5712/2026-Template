@@ -26,6 +26,8 @@ COARSE_TRAVEL_ROT = 0.1  # under this, say how rough the ratio is rather than im
 ENABLED = "/DriverStation/Enabled"
 BRINGUP = "/RealOutputs/BringUp/"
 RATIO = "/MeasuredRatio"
+# Which control request was last sent - says whether a run was open loop or closed loop.
+REQUEST = "/RealOutputs/Hardware/TalonFX/"
 
 
 def entry_names(path):
@@ -58,6 +60,8 @@ def read(path, keys):
             series[name].append((record.getTimestamp() / 1e6, struct.unpack("<d", raw)[0]))
         elif kind == "boolean" and len(raw) == 1:
             series[name].append((record.getTimestamp() / 1e6, struct.unpack("<?", raw)[0]))
+        elif kind == "string":
+            series[name].append((record.getTimestamp() / 1e6, raw.decode("utf-8", "replace")))
     return series
 
 
@@ -181,13 +185,67 @@ def zero_and_gravity(series, name):
         print(f"  kG = {constant_kg:.3f}  (same volts at every pose - an ELEVATOR, Elevator_Static)")
 
 
+def open_loop_report(grid, volts, speed):
+    """Direction and kV from a held-voltage run: kV is the slope of volts against rps."""
+    # Group the settled rows by voltage step. Rounding to 0.1 V is coarser than the steps a
+    # bring-up OpMode holds and finer than the gap between them.
+    levels = {}
+    for t, row in grid:
+        if abs(row[volts]) > 0.25:
+            levels.setdefault(round(row[volts], 1), []).append((t, row))
+
+    points = []
+    for level in sorted(levels):
+        rows = levels[level]
+        if len(rows) * 0.02 < MIN_DWELL_S:
+            continue
+        settled = rows[len(rows) // 2 :]  # drop the spin-up, keep the settled half
+        points.append((mean(settled, speed), mean(settled, volts)))
+
+    if not points:
+        print("  never commanded to spin - nothing to measure")
+        return
+
+    print("  open-loop steps:")
+    for rps, volt in points:
+        per = f"{volt / rps:.4f}" if rps else "n/a"
+        print(f"    {volt:+.3f} V  ->  {rps:+8.2f} rps   (volts/rps {per})")
+
+    rps, volt = points[-1]
+    print(f"  direction: {'ok' if volt * rps > 0 else 'BACKWARDS - flip MotorOutput.Inverted'}")
+    if len(points) < 2:
+        print(f"  only one step held - kV is {volt / rps:.4f} if kS is zero")
+        return
+
+    # Least squares on V = kS + kV*rps. The intercept absorbs kS, so the slope is a cleaner kV
+    # than any single point's volts/rps.
+    n = len(points)
+    mean_rps = sum(r for r, _ in points) / n
+    mean_volt = sum(v for _, v in points) / n
+    spread = sum((r - mean_rps) ** 2 for r, _ in points)
+    kv = sum((r - mean_rps) * (v - mean_volt) for r, v in points) / spread if spread else 0.0
+    print(f"  kV (slope over {n} steps) = {kv:.4f}   <- put this in Slot0.kV")
+    print(f"  kS (intercept) = {mean_volt - kv * mean_rps:+.4f}")
+
+
 def velocity_report(series, name):
     """Direction and kV, for a motor run under closed-loop velocity."""
     volts = f"/Hardware/TalonFX/{name}/AppliedVolts"
     speed = f"/Hardware/TalonFX/{name}/VelocityRps"
     reference = f"/Hardware/TalonFX/{name}/ClosedLoopReference"
 
+    requests = {value for _, value in series.get(f"{REQUEST}{name}/Request", [])}
+
     grid = resample(series, [volts, speed, reference])
+
+    # Prefer an open-loop run whenever the log has one: it is the only way to measure kV without
+    # already trusting a kV. The closed-loop reference cannot tell the two apart - Motion Magic
+    # ramps its setpoint down from whatever the wheel was doing, so a plain stop() leaves a
+    # reference as high as the last speed reached.
+    if "VoltageOut" in requests:
+        open_loop_report(grid, volts, speed)
+        return
+
     target = max((row[reference] for _, row in grid), default=0.0)
     if target <= 0:
         print("  never commanded to spin - nothing to measure")
@@ -215,7 +273,24 @@ def velocity_report(series, name):
     print(f"  measured volts per rps = {volt / rps:.4f}   <- start kV here, then re-run")
 
 
+def selftest():
+    """Feed open_loop_report a synthetic V = 0.1 + 0.12*rps run and check it recovers kV and kS."""
+    volts, speed = "V", "rps"
+    grid = []
+    t = 0.0
+    for step in (1.0, 2.0, 3.0):
+        rps = (step - 0.1) / 0.12
+        for i in range(100):  # 2 s at 20 ms; first half ramps, second half settled
+            grid.append((t, {volts: step, speed: rps * min(1.0, i / 25)}))
+            t += 0.02
+    open_loop_report(grid, volts, speed)
+    print("selftest: expected kV 0.1200, kS +0.1000")
+
+
 def main():
+    if "--selftest" in sys.argv:
+        selftest()
+        return
     path = sys.argv[1] if len(sys.argv) > 1 else None
     if path is None:
         logs = glob.glob(os.path.join("logs", "*.wpilog"))
@@ -248,6 +323,7 @@ def main():
             f"/Hardware/TalonFX/{name}/AppliedVolts",
             f"/Hardware/TalonFX/{name}/VelocityRps",
             f"/Hardware/TalonFX/{name}/ClosedLoopReference",
+            f"{REQUEST}{name}/Request",
         ]
     series = read(path, keys)
 

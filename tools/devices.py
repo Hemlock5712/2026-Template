@@ -56,12 +56,17 @@ def act(host, device, action, **extra):
 
 
 def expected_firmware():
-    """The device firmware the pinned Phoenix vendordep expects, e.g. 26.50.0-alpha-1 -> 26.50.0."""
+    """The device firmware the pinned Phoenix vendordep expects, e.g. 26.50.0-alpha-1 -> 26.
+
+    MAJOR version only. An alpha vendordep's minor version runs ahead of any released device
+    firmware - 26.50.0-alpha-1 has no matching 26.50.x CRF and never will - so comparing more
+    than the major flags every device on the bus forever.
+    """
     for path in VENDORDEPS.glob("Phoenix6*.json"):
         version = json.loads(path.read_text()).get("version", "")
-        match = re.match(r"(\d+)\.(\d+)\.(\d+)", version)
+        match = re.match(r"(\d+)\.", version)
         if match:
-            return ".".join(match.groups()), version
+            return match.group(1), version
     return None, None
 
 
@@ -76,6 +81,8 @@ def cmd_list(args):
     print(f"{len(found)} devices{busy}")
     if want:
         print(f"vendordep {raw} expects firmware {want}.x\n")
+    # Compare the major only - see expected_firmware.
+    want = want + "." if want else want
 
     seen = {}
     for device in sorted(found, key=lambda d: (d["Model"], d["ID"])):

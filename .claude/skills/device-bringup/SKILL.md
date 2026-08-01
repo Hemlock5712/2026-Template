@@ -40,8 +40,14 @@ vendordep 26.50.0-alpha-1 expects firmware 26.50.0.x
 ```
 
 It flags **ID 0** (factory default — almost always the thing you just plugged in), duplicate IDs,
-and any firmware that does not match the pinned vendordep. Fix a firmware mismatch before anything
-else; it wastes hours further down.
+and any firmware whose **major** version does not match the pinned vendordep.
+
+Only the major is compared, on purpose. An alpha vendordep's minor version runs ahead of every
+released firmware: `26.50.0-alpha-1` has no matching `26.50.x` CRF and never will, because the 2027
+alpha library runs on 2026-season (`26.x`) device firmware. Comparing more than the major flags
+every device on the bus forever. Before hunting for a version, check what actually exists in
+[CTRE's firmware-index.json](https://github.com/CrossTheRoadElec/Phoenix-Releases/blob/master/firmware-index.json)
+— it also declares the newest season, e.g. `"Latest": {"v6": "2026"}`.
 
 > In **simulation** this lists only devices the code constructed, so it cannot discover something
 > new. On hardware it enumerates the real bus.
@@ -55,8 +61,8 @@ python tools/devices.py setid 0 31   # that one becomes ID 31
 
 | Action | Where it stands |
 | --- | --- |
-| `blink` | **Works**, verified against a simulated device (`Error=0`) |
-| `setid` | **Cannot be tested in simulation** — a simulated device always refuses with `-109`, having no non-volatile storage to write an ID into. Addressing is proven correct (the same parameters blink fine) and `newid` is echoed back, so only real silicon can confirm it. Fall back to Tuner X if it fails |
+| `blink` | **Works**, verified on real hardware and against a simulated device (`Error=0`) |
+| `setid` | **Works on real hardware** — verified on a real Talon FX (`41 -> 21`, `Error=0`, re-enumerated at the new ID, and a running robot program started seeing the device mid-run). The `-109` refusal is simulation-only: a simulated device has no non-volatile storage to write an ID into |
 | `selftest` | Not available over HTTP: `-144 "This feature requires Tuner X."` |
 | `getconfigs` | Not available over HTTP: `-116` |
 | firmware update | Tuner X |
@@ -144,13 +150,76 @@ holds speed, so one run produces every number:
 python tools/bringup_report.py
 ```
 
-**On hardware, without moving anything** — leave the robot **disabled** and move the mechanism by
-hand through as much of its range as you can. `BringUp` still logs. This is the safe first pass and
-it gets you the ratio, the sign and the zero.
+### Short version
 
-**On hardware, under power** — deploy, select the **Bring-Up** utility OpMode, clear the mechanism's
-path, and enable. Selecting the OpMode and enabling *is* the confirmation gate; disable always
-stops it. Read the log from `/U/logs` (see the `log-reading` skill) and run the same report.
+1. Close Tuner X. Only one program can own the CANivore.
+2. `python tools/devices.py list` — find it. `blink` — confirm which one.
+3. `setid <old> <new>` — give it the ID the subsystem expects.
+4. Strip the subsystem to devices + an explicit all-zero config. It cannot move, on purpose.
+5. Disabled, hands on: move it, read the ratio and the sign.
+6. Open loop volts: measure kV (spinner) or the lift voltage (arm).
+7. Write those in. Add kP last, and only then let it move under closed loop.
+
+Never skip 4. A motor keeps its **last** config, so "no config" means "whatever the previous
+mechanism left behind" — a leftover flywheel kV once meant a 100 rot/s cruise on an arm.
+
+### On hardware, in this order
+
+Each step depends on less than the one after it, so a failure shows up before it can corrupt a
+number you trust.
+
+**1. Disabled, moved by hand.** Leave the robot **disabled** and move the mechanism through as much
+of its range as you can. `BringUp` still logs. Nothing is powered, and it gets you the ratio, the
+sign and the zero.
+
+> **Do not touch the mechanism until you hear the device chirp on deploy.** Devices answer a second
+> or two after the program starts, and any position seed lands at that moment — not when the program
+> was launched. Move before the chirp and the pose you think you seeded is not the pose recorded.
+> Measured: a device retained `422.75` rot across a restart and read it back 39 ms into the next run,
+> well before the seed at 1.5 s.
+
+Hold the *final* pose until the run ends, rather than trying to hit a moment. The last plateau in the
+log is then the reading, so exact timing stops mattering — useful because whoever is running Gradle
+cannot cue you mid-run.
+
+**2. Open loop, held voltages.** The **Flywheel Volts** `@Utility` OpMode holds a few voltages and
+the report fits kV as the *slope* of volts against rps:
+
+```powershell
+./gradlew simulateJavaAgent -PhwSim '-Pmode=utility:Flywheel Volts' -PstopAfter=14
+python tools/bringup_report.py
+```
+
+Do this **before** any closed-loop run. `VoltageOut` uses no gains, so this is the one measurement
+that cannot be poisoned by a bad gain *or by a config that silently failed to apply* — the exact
+failure the Tuner X warning above describes. It is also the low-voltage look at which way the shaft
+actually turns. The closed loop, by contrast, needs a kV in order to measure a kV.
+
+A single settled point folds kS into kV and reads high. Measured on a bare Kraken X60, per-point
+volts/rps ran 0.1117 / 0.1105 / 0.1102 at 1 / 2 / 3 V while the slope gave **0.1094**.
+
+**3. Closed loop, to confirm — not to measure.** Write the measured kV in, then run the **Bring-Up**
+OpMode, clear the mechanism's path, and enable. Selecting the OpMode and enabling *is* the
+confirmation gate; disable always stops it. Read the log from `/U/logs` (see the `log-reading`
+skill). It should now settle on target: with kV 0.1094 it settled at 25.14 rps on 2.766 V against
+2.756 V predicted, a 10 mV agreement between two independent methods.
+
+### Which gains a bare bench can actually give you
+
+| Gain | Set by | Measure on a bare shaft? |
+| --- | --- | --- |
+| `kV` | the motor itself | **Yes — transfers unchanged** |
+| `kS` | friction of the whole assembly | Floor only; re-measure with the load on |
+| `kA` | moment of inertia | **No** — a bare rotor's inertia is not the machine's |
+| `kP` | inertia, plus how hard it should fight | **No** — tune last, with the load on |
+
+kV is a property of the motor. Everything below it is a property of the *machine*, so measuring kA or
+tuning kP against a bare shaft produces gains for a robot that does not exist. Do kV here; do the
+rest after the wheel, arm or gearbox is bolted on, kP last.
+
+kS deserves one caveat: the fit's intercept is an **extrapolation** below the slowest speed sampled,
+and a 3-point fit cannot separate Coulomb friction (true kS) from viscous drag (which hides in kV).
+For a kS you can lean on, ramp voltage slowly until the mechanism just breaks loose.
 
 ## Reading the report
 
@@ -228,6 +297,10 @@ Then deploy and re-run the sweep to confirm.
 - Set soft limits before the first closed-loop move, not after.
 - The tool cannot see the robot. Any claim about physical state ("the arm is horizontal") is yours
   to confirm, never the tool's to assume.
+- **Check the sign before naming a cause.** A log showing accelerate-then-stop looks like a mechanism
+  falling, but gravity can only move it the direction gravity pulls. Establish which sign is "down" —
+  cut the power and see which way it drifts — before blaming gravity. Got this wrong once on a real
+  arm: the travel was positive, positive turned out to be *up*, so it was never a fall.
 
 ## Is this hardware, or just sim?
 
@@ -242,7 +315,22 @@ reports which — so despite the name, it is **false** in hardware-attached simu
 
 `isConnected()` is the per-device check, and it means nothing in pure sim — a simulated device
 answers even at a CAN ID nothing is configured for. Get into hardware-attached sim with
-`./gradlew simulateJava -PhwSim`.
+`./gradlew simulateJava -PhwSim` (verified: `Utils.isSimulation()` really does report `false`, and
+the console names the CANivore by USB serial). It composes with `-Pheadless` and `-Pmode=...`.
+
+**Close Phoenix Tuner X first, and make sure no earlier robot JVM is still alive.** Only one process
+can own the CANivore. While something else holds it the robot program still *receives* status
+signals — devices look connected, positions update — but every `apply()` comes back `TxFailed`, so
+configs never land and gains stay at whatever the device already had. Measured, not guessed. The
+tell is in the console:
+
+```
+[phoenix-diagnostics] Server ... first attempt to open server failed at port 1250
+TalonFX 21 failed to configure after 5 attempts (TxFailed)
+```
+
+Port 1250 already taken means another owner. On Windows: `Get-NetTCPConnection -LocalPort 1250`, and
+check for a stray `java.exe` — stopping a Gradle sim can leave the robot JVM running.
 
 Do **not** use `CANBus.getStatus()` or `isNetworkFD()`. With nothing plugged in — and even with a
 nonsense bus name — both report a healthy FD bus (`Status=OK`, `isNetworkFD=true`). The failure
@@ -262,6 +350,7 @@ only ever surfaces as a `[phoenix] CANbus Failed to Connect` console line.
   leader and ignores `MotorAlignmentValue`, so a reversed follower still reads `+1` in sim.
   Measured, not assumed: an `Opposed` follower logged a rotor position byte-identical to its
   leader's. Verify follower direction on hardware.
-- kS and kA need a voltage ramp at more than one speed — this measures kG and kV only.
+- kA needs a voltage ramp, not held steps — this measures kG, kV and (from the open-loop fit's
+  intercept) kS only. Treat a bare-shaft kS as a floor.
 - Fusing a CANcoder (`withFusedCANcoder`) needs a Phoenix Pro license. Unlicensed, it falls back to
   remote and `RotorToSensorRatio` goes unused — declare it anyway so the number is recorded.

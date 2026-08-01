@@ -41,6 +41,9 @@ operate in **teacher mode**: follow the **`teaching`** skill — simple words, s
 idea at a time, and point to the right docs to learn more. Still write correct code; teacher mode
 only changes *how you explain* it.
 
+- **Keep it short.** A few sentences, not a report. No kid reads a wall of text — lead with the
+  answer, give the one number or one reason that matters, and put the depth on the website. If an
+  explanation needs headings and tables, it belongs at frc5712.com, not in a reply.
 - A student or mentor can say **"teacher mode off"** to drop the teaching layer for the rest of the
   session (answer like a normal engineer), and **"teacher mode on"** to bring it back. A mentor
   doing focused development work will often want it off.

@@ -150,6 +150,11 @@ holds speed, so one run produces every number:
 python tools/bringup_report.py
 ```
 
+> Every number in this skill is from one bench run on one motor. They show what good output looks
+> like and what the failure modes are — they are **never** values to reuse. Your mechanism's ratio,
+> kG, kS and kV are yours to measure. Reporting a number from this file as if you measured it is the
+> one unforgivable bring-up error.
+
 ### Short version
 
 1. Close Tuner X. Only one program can own the CANivore.

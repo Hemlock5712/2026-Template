@@ -17,6 +17,10 @@ import org.wpilib.datalog.DataLogRecord;
  * Compares what the robot did against what replaying the same log produces. Run by the {@code
  * replayCheck} Gradle task - see the run-replay skill.
  *
+ * <p>A command-line tool with a {@code main}, not a JUnit test, even though it lives under {@code
+ * src/test}. That is deliberate: test code never reaches the robot, and a desktop-only tool has no
+ * business in the deployed jar. Leave it here.
+ *
  * <p>A replay log holds both: {@code RealOutputs} copied from the recording, and {@code
  * ReplayOutputs} recomputed by this build of the code. With the code unchanged they must agree. If
  * they do not, some value is still coming from hardware instead of the log, and replay is lying.

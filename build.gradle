@@ -92,9 +92,6 @@ dependencies {
 test {
     useJUnitPlatform()
     systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
-    // src/test also holds ReplayCheck, a command-line tool rather than a JUnit test, so "test
-    // sources exist but no tests ran" is normal here until real tests are added.
-    failOnNoDiscoveredTests = false
 }
 
 // Simulation configuration (e.g. environment variables).

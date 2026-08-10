@@ -21,7 +21,7 @@ Use this when you want the GUI, Glass widgets, AdvantageScope live view, or a ph
 
 ## Headless agent sim (auto-enable) — `simulateJavaAgent`
 
-For agent loops / CI: runs **without the GUI or socket Driver Station**, and **auto-enables** the
+For agent loops / CI: runs **without the GUI** (and, in pure sim, without the Driver Station), and **auto-enables** the
 robot in the mode you ask for, so it actually starts playing instead of sitting disabled.
 
 ```powershell
@@ -49,7 +49,8 @@ falls back rather than sitting silently disabled.
 
 | Property | Effect |
 | --- | --- |
-| `-Pheadless` | Skip the sim GUI and socket Driver Station. Implied by `simulateJavaAgent`. |
+| `-Pheadless` | Skip the sim GUI. Implied by `simulateJavaAgent`. |
+| `-PhwSim` | Talk to REAL devices over CAN. Forces the Driver Station on and refuses to auto-enable. |
 | `-Pmode=auto` | Auto-enable in AUTONOMOUS (default for `simulateJavaAgent`). Runs **"3 - Drive Stow Drive"** — it exercises the drivetrain *and* the arm, so it's the useful regression test. |
 | `-Pmode=teleop` | Auto-enable in TELEOPERATED. Runs **"Teleop"**. |
 | `-Pmode=utility` | Auto-enable in UTILITY (the renamed "Test"). Runs **"Stow"** — arm only, no drivetrain, so it's the clean way to isolate mechanism behavior. |
@@ -129,6 +130,20 @@ the id wasn't set with its mode bits — that's the bug `SimStartup.setRobotMode
   `gradle.properties`). Building from the WPILib VS Code extension handles this for you.
 - **Gains are sim-tuned, not robot-tuned.** Arm/Flywheel gains are real values that work against
   the sim plants, so mechanisms do move — but re-tune them on hardware (see `robot-description`).
+
+## Real devices: `-PhwSim` never auto-enables
+
+`-PhwSim` swaps in the hardware natives, so the program drives **actual motors over CAN**. Auto-enable
+is wrong there for one reason: nothing on screen would let you stop it.
+
+So `-PhwSim` keeps the Driver Station even in a headless run, and `SimStartup` prints which OpMode to
+pick instead of enabling anything. You pick it, clear the mechanism's path, hit Enable — and Disable
+is the stop button. Closing the Driver Station or Ctrl-C also stops the robot.
+
+The GUI and the Driver Station are separate switches: headless drops the GUI, but the Driver Station
+only goes away when nothing physical can move. Do not pass `-PstopAfter` to a hardware run — it counts
+from program start, not from when you enable, so it fires at an arbitrary moment. See the
+`device-bringup` skill.
 
 ## When NOT to use headless
 

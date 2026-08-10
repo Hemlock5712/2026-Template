@@ -143,12 +143,26 @@ skill).
 ## Running it
 
 **In sim** — the `Bring-Up` `@Utility` OpMode sweeps the arm through three poses while the flywheel
-holds speed, so one run produces every number:
+holds speed, so one run produces every number. Nothing physical can move, so this one auto-enables
+and ends by itself:
 
 ```powershell
 ./gradlew simulateJavaAgent '-Pmode=utility:Bring-Up' -PstopAfter=14
 python tools/bringup_report.py
 ```
+
+**On real devices, add `-PhwSim` — and then you drive it, not the script.** `-PhwSim` talks to the
+devices over CAN, so real motors turn. The run will **not** enable itself: it starts the Driver
+Station, prints which OpMode to pick, and waits for you.
+
+```powershell
+./gradlew simulateJavaAgent -PhwSim '-Pmode=utility:Bring-Up'
+```
+
+Then, in the Driver Station: pick the OpMode, **clear the mechanism's path**, hit Enable — and keep
+a hand on Disable, which is the stop button. Closing the Driver Station or Ctrl-C in the terminal
+also stops the robot. Leave `-PstopAfter` off for hardware runs: it counts from program start, not
+from when you enable, so it will usually fire in the middle of nothing.
 
 > Every number in this skill is from one bench run on one motor. They show what good output looks
 > like and what the failure modes are — they are **never** values to reuse. Your mechanism's ratio,
@@ -191,7 +205,8 @@ cannot cue you mid-run.
 the report fits kV as the *slope* of volts against rps:
 
 ```powershell
-./gradlew simulateJavaAgent -PhwSim '-Pmode=utility:Flywheel Volts' -PstopAfter=14
+./gradlew simulateJavaAgent -PhwSim '-Pmode=utility:Flywheel Volts'
+# pick the OpMode in the Driver Station, clear the path, enable; disable when it has settled
 python tools/bringup_report.py
 ```
 

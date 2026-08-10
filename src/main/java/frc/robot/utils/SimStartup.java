@@ -54,6 +54,29 @@ public final class SimStartup {
     timer.start();
   }
 
+  /**
+   * Tells the user to drive this run from the Driver Station, and which OpMode to pick. Printed
+   * instead of auto-enabling whenever real hardware is attached.
+   */
+  private static void printDriverStationPrompt(String spec) {
+    String wanted = spec.contains(":") ? spec.substring(spec.indexOf(':') + 1).trim() : spec;
+    System.out.println(
+        """
+
+        ==========================================================================
+          REAL DEVICES ARE ON THE BUS - this run will not enable itself.
+
+          1. Open the Driver Station (it was started alongside this program).
+          2. Pick the OpMode%s
+          3. CLEAR THE MECHANISM'S PATH, then hit Enable.
+          4. Disable to stop it. That is the kill switch - keep a hand near it.
+
+          Closing the Driver Station, or Ctrl-C here, also stops the robot.
+        ==========================================================================
+        """
+            .formatted(wanted.isEmpty() ? " you want to run." : ": \"" + wanted + "\"."));
+  }
+
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
   public static void arm() {
     // REPLAY is also "simulation", but there the DS state comes from the log - enabling it here
@@ -67,6 +90,13 @@ public final class SimStartup {
     armStopTimer();
 
     String spec = System.getProperty("frc.sim.startMode", "").trim();
+
+    // Real devices are on the bus (-PhwSim), so real motors can move. Never enable ourselves:
+    // a person has to be watching the mechanism, and has to be able to drop the enable.
+    if (Boolean.getBoolean("frc.sim.requireDriverStation")) {
+      printDriverStationPrompt(spec);
+      return;
+    }
     if (spec.isEmpty() || spec.equalsIgnoreCase("disabled")) {
       return; // Stay disabled - normal interactive sim behavior.
     }

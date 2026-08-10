@@ -117,10 +117,16 @@ def newestLog = {
 def replayLog = (project.findProperty('replay') ?: (wantsReplay ? newestLog() : '')).toString()
 def headless = runningAgentSim || replayLog || project.hasProperty('headless')
 
-// In headless mode, skip the Swing GUI and the socket DriverStation so nothing competes with the
-// programmatic enable that SimStartup performs via DriverStationSim.
+// -PhwSim talks to REAL devices over CAN, so real motors move. A human has to hold the enable and
+// be able to drop it, which means the Driver Station is not optional there however headless the run.
+def hardwareAttached = project.hasProperty('hwSim')
+
+// The GUI is only worth starting for an interactive session. The Driver Station is separate: skip it
+// only when nothing physical can move, because it is the stop button.
 if (!headless) {
     wpi.sim.addGui().defaultEnabled = true
+}
+if (!headless || hardwareAttached) {
     wpi.sim.addDriverstation()
 }
 
@@ -129,6 +135,8 @@ if (!headless) {
 def simStartMode = (project.findProperty('mode') ?: (runningAgentSim ? 'auto' : '')).toString()
 tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach {
     systemProperty 'frc.sim.startMode', simStartMode
+    // With real devices on the bus, SimStartup prints instructions instead of enabling itself.
+    systemProperty 'frc.sim.requireDriverStation', hardwareAttached.toString()
     if (project.hasProperty('stopAfter')) {
         systemProperty 'frc.sim.stopAfterSeconds', project.property('stopAfter').toString()
     }

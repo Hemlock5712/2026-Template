@@ -10,6 +10,7 @@ import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVelocityVoltage;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
+import frc.robot.Robot;
 import frc.robot.generated.TunerConstants;
 import frc.robot.hardware.LoggedTalonFX;
 import frc.robot.utils.RunMode;
@@ -115,12 +116,12 @@ public class Flywheel extends Mechanism {
     motorSim.setSupplyVoltage(RobotController.getBatteryVoltage());
 
     wheelSim.setInputVoltage(motorSim.getMotorVoltage());
-    wheelSim.update(0.020); // one 20 ms robot loop
+    wheelSim.update(Robot.PERIOD_SECONDS); // one robot loop
 
     // Report the pretend wheel speed back to the motor, in rotations per second. Advance the
     // rotor too, or RotorPositionRot logs a wheel that never turns.
     double rotationsPerSecond = wheelSim.getAngularVelocity() / (2 * Math.PI);
     motorSim.setRotorVelocity(rotationsPerSecond);
-    motorSim.addRotorPosition(rotationsPerSecond * 0.020);
+    motorSim.addRotorPosition(rotationsPerSecond * Robot.PERIOD_SECONDS);
   }
 }

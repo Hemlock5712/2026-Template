@@ -36,7 +36,7 @@ public class TeleopOpMode extends PeriodicOpMode {
       new SwerveRequest.FieldCentric()
           .withDeadband(maxSpeed * 0.1)
           .withRotationalDeadband(maxAngularRate * 0.1) // 10% stick deadband
-          .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+          .withDriveRequestType(DriveRequestType.Velocity);
 
   private final CommandNiDsXboxController driver = new CommandNiDsXboxController(0);
 
@@ -58,7 +58,7 @@ public class TeleopOpMode extends PeriodicOpMode {
     driver.rightTrigger().whileTrue(robot.stow());
 
     // Hold A: vision-only auto-align to the tag standoff.
-    driver.a().whileTrue(new DriveToTag(drivetrain, robot.limelightBR.camera(), ALIGN_TAG_ID));
+    driver.a().whileTrue(new DriveToTag(drivetrain, robot.limelightBR, ALIGN_TAG_ID));
 
     // Hold Y: auto-score prep. Letting go stops the flywheel via its default command, so no
     // "stop" binding is needed here.

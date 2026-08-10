@@ -13,6 +13,7 @@ import com.ctre.phoenix6.controls.MotionMagicVoltage;
 import com.ctre.phoenix6.signals.GravityTypeValue;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
+import frc.robot.Robot;
 import frc.robot.generated.TunerConstants;
 import frc.robot.hardware.LoggedCANcoder;
 import frc.robot.hardware.LoggedTalonFX;
@@ -209,7 +210,7 @@ public class Arm extends Mechanism {
 
     // Motor voltage in -> physics -> new arm angle out.
     armSim.setInputVoltage(motorSim.getMotorVoltage());
-    armSim.update(0.020); // one 20 ms robot loop
+    armSim.update(Robot.PERIOD_SECONDS); // one robot loop
 
     // Report the pretend arm back to both sensors, in rotations.
     double armRotations = armSim.getAngle() / (2 * Math.PI);

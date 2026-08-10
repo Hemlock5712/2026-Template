@@ -6,8 +6,8 @@ package frc.robot.commands;
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
-import com.limelightvision.Limelight;
-import com.limelightvision.Limelight.FiducialTarget;
+import frc.robot.Robot;
+import frc.robot.hardware.LoggedLimelight;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.utils.ClassicCommand;
 import org.wpilib.math.controller.ProfiledPIDController;
@@ -29,29 +29,33 @@ public class DriveToTag extends ClassicCommand {
   private final DriveMechanism drivetrain;
 
   // Which camera to read and which AprilTag to align to.
-  // DOES NOT REPLAY: target-space reads come from NetworkTables, not the log. Fine for a
-  // live driver assist; add the targets to LoggedLimelight's inputs to replay this.
-  private final Limelight camera;
+  private final LoggedLimelight camera;
   private final int targetTagId;
 
   // One trapezoidal PID per axis; the profile limits speed and acceleration. kP is 0 - the
   // feedforward in execute() does the work. TODO: tune the limits and kP.
   private final ProfiledPIDController distance =
-      new ProfiledPIDController(0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(2.5, 3.0));
+      new ProfiledPIDController(
+          0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(2.5, 3.0), Robot.PERIOD_SECONDS);
   private final ProfiledPIDController lateral =
-      new ProfiledPIDController(0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(2.5, 3.0));
+      new ProfiledPIDController(
+          0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(2.5, 3.0), Robot.PERIOD_SECONDS);
   private final ProfiledPIDController heading =
       new ProfiledPIDController(
-          0.0, 0.0, 0.0, new TrapezoidProfile.Constraints(Math.PI, 2.0 * Math.PI));
+          0.0,
+          0.0,
+          0.0,
+          new TrapezoidProfile.Constraints(Math.PI, 2.0 * Math.PI),
+          Robot.PERIOD_SECONDS);
 
-  // Robot-relative velocity request; open-loop so no drive-velocity PID tuning is needed.
+  // Robot-relative closed-loop velocity request; needs the drive gains tuned.
   private final SwerveRequest.ApplyRobotVelocity driveRequest =
-      new SwerveRequest.ApplyRobotVelocity().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+      new SwerveRequest.ApplyRobotVelocity().withDriveRequestType(DriveRequestType.Velocity);
 
   // Latest reading, cached by execute() so isFinished() can reuse it. Null = tag not in view.
   private Pose3d robotInTag = null;
 
-  public DriveToTag(DriveMechanism drivetrain, Limelight camera, int targetTagId) {
+  public DriveToTag(DriveMechanism drivetrain, LoggedLimelight camera, int targetTagId) {
     super("DriveToTag", drivetrain); // name + requirement, like v2 addRequirements(drivetrain)
     this.drivetrain = drivetrain;
     this.camera = camera;
@@ -119,20 +123,15 @@ public class DriveToTag extends ClassicCommand {
   }
 
   /**
-   * The robot's pose in our tag's frame, or null when the camera doesn't see that tag. We search
-   * the list for our ID so we can never align to the wrong tag.
+   * The robot's pose in our tag's frame, or null when the camera doesn't see that tag. We look up
+   * our ID so we can never align to the wrong tag. Comes from the log, so this replays.
    */
   private Pose3d readRobotInTag() {
-    if (!camera.hasTarget()) { // also false if the camera is disconnected
-      return null;
-    }
-    for (FiducialTarget target : camera.getLatestResults().fiducialTargets) {
-      if (target.fiducialId == targetTagId) {
-        Pose3d pose = target.getRobotPose_TargetSpace();
-        // All-zero pose = no target-space data for this tag yet.
-        return pose.equals(Pose3d.kZero) ? null : pose;
-      }
-    }
-    return null;
+    // All-zero pose = the camera saw the tag but has no target-space solve for it yet.
+    return camera
+        .tag(targetTagId)
+        .map(LoggedLimelight.Tag::robotPoseTargetSpace)
+        .filter(pose -> !pose.equals(Pose3d.kZero))
+        .orElse(null);
   }
 }

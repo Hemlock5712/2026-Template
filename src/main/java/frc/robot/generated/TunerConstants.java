@@ -53,9 +53,11 @@ public class TunerConstants {
   // When not Pro-licensed, Fused*/Sync* automatically fall back to Remote*
   private static final SteerFeedbackType kSteerFeedbackType = SteerFeedbackType.FusedCANcoder;
 
-  // The stator current at which the wheels start to slip;
-  // This needs to be tuned to your individual robot
-  private static final Current kSlipCurrent = Amps.of(120);
+  // BACKSTOP, not the traction limit. AccelerationLimiter owns slip prevention now, so this is set
+  // roughly double the stator current we ever intend to command - it should never engage in normal
+  // driving. If it does, something is wrong (a jam, a collision) and the hard clamp is what you
+  // want. Lower it only if you remove the limiter.
+  private static final Current kSlipCurrent = Amps.of(300);
 
   // Initial configs for the drive and steer motors and the azimuth encoder; these cannot be null.
   // Some configs will be overwritten; check the `with*InitialConfigs()` API documentation.

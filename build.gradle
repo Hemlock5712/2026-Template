@@ -242,6 +242,17 @@ tasks.register('checkReplaySafety') {
                 }
             }
         }
+        // Replay is the IO layer's business. A mechanism or command that branches on REPLAY is
+        // doing the wrapper's job, and the next person to read it has to know which mode they are
+        // in. Robot.java is the exception: it is what turns replay on.
+        tree.matching { exclude 'Robot.java' }.each { f ->
+            f.eachLine { line, n ->
+                if (line.trim().startsWith('//') || line.trim().startsWith('*')) return
+                if (line.contains('RunMode.REPLAY')) {
+                    offenders << "  ${f.name}:${n}   RunMode.REPLAY outside frc/robot/hardware"
+                }
+            }
+        }
         // Phoenix's clock is not redirected by AdvantageKit, so code timing itself with it runs at
         // wall-clock speed during replay and never finishes. Sim physics pacing is the exception.
         tree.matching { exclude 'subsystems/CommandSwerveDrivetrain.java' }.each { f ->
@@ -254,10 +265,11 @@ tasks.register('checkReplaySafety') {
         }
         if (offenders) {
             throw new GradleException(
-                "Raw Phoenix devices outside frc/robot/hardware:\n"
+                "Replay safety problems outside frc/robot/hardware:\n"
                 + offenders.join("\n")
-                + "\n\nThese do NOT replay - their values come from CAN, not the log.\n"
-                + "Use the matching wrapper instead, e.g. LoggedTalonFX.")
+                + "\n\nRaw devices do NOT replay - their values come from CAN, not the log.\n"
+                + "Use the matching wrapper instead, e.g. LoggedTalonFX. And leave the REPLAY\n"
+                + "branching to the wrapper: mechanisms should not know which mode they are in.")
         }
     }
 }

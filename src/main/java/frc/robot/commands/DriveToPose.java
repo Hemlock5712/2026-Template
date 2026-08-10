@@ -7,6 +7,7 @@ package frc.robot.commands;
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import com.ctre.phoenix6.swerve.utility.LinearPath;
+import frc.robot.Robot;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.utils.AllianceFlip;
 import frc.robot.utils.ClassicCommand;
@@ -35,16 +36,17 @@ public class DriveToPose extends ClassicCommand {
           new TrapezoidProfile.Constraints(Math.PI, 2.0 * Math.PI));
 
   // Trims drift back onto the profile; the feedforward does the real work. TODO: tune.
-  private final PIDController xController = new PIDController(3.0, 0.0, 0.0);
-  private final PIDController yController = new PIDController(3.0, 0.0, 0.0);
-  private final PIDController headingController = new PIDController(4.0, 0.0, 0.0);
+  private final PIDController xController = new PIDController(3.0, 0.0, 0.0, Robot.PERIOD_SECONDS);
+  private final PIDController yController = new PIDController(3.0, 0.0, 0.0, Robot.PERIOD_SECONDS);
+  private final PIDController headingController =
+      new PIDController(4.0, 0.0, 0.0, Robot.PERIOD_SECONDS);
 
-  // Field-relative velocity request, blue-origin (the same frame as odometry); open-loop so no
-  // drive-velocity PID tuning is needed.
+  // Field-relative velocity request, blue-origin (the same frame as odometry). Closed-loop
+  // velocity: the module holds the speed we ask for, which needs the drive gains tuned.
   private final SwerveRequest.ApplyFieldVelocity driveRequest =
       new SwerveRequest.ApplyFieldVelocity()
           .withForwardPerspective(SwerveRequest.ForwardPerspectiveValue.BlueAlliance)
-          .withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+          .withDriveRequestType(DriveRequestType.Velocity);
 
   // Captured once at start: the pose + velocity the trajectory is generated from.
   private LinearPath.State startState = new LinearPath.State();

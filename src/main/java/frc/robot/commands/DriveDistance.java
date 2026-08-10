@@ -6,6 +6,7 @@ package frc.robot.commands;
 
 import com.ctre.phoenix6.swerve.SwerveModule.DriveRequestType;
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import frc.robot.Robot;
 import frc.robot.subsystems.DriveMechanism;
 import frc.robot.utils.ClassicCommand;
 import org.wpilib.math.controller.PIDController;
@@ -40,11 +41,11 @@ public class DriveDistance extends ClassicCommand {
 
   // Bigger = tries harder to close the gap. Too big overshoots; too small stops short, because
   // the last slow crawl can't beat the drivetrain's friction. Re-tune on the real robot.
-  private final PIDController controller = new PIDController(6.0, 0.0, 0.0);
+  private final PIDController controller = new PIDController(6.0, 0.0, 0.0, Robot.PERIOD_SECONDS);
 
   // Robot-relative: +x is straight out the front of the robot, whichever way it's pointing.
   private final SwerveRequest.ApplyRobotVelocity driveRequest =
-      new SwerveRequest.ApplyRobotVelocity().withDriveRequestType(DriveRequestType.OpenLoopVoltage);
+      new SwerveRequest.ApplyRobotVelocity().withDriveRequestType(DriveRequestType.Velocity);
 
   // Where we were when the command started - the distance is measured from here.
   private Pose2d startPose = Pose2d.kZero;

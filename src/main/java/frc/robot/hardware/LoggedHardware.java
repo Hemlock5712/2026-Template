@@ -6,6 +6,7 @@ package frc.robot.hardware;
 
 import com.ctre.phoenix6.BaseStatusSignal;
 import com.ctre.phoenix6.CANBus;
+import frc.robot.Robot;
 import frc.robot.utils.RunMode;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -59,6 +60,26 @@ public final class LoggedHardware {
     SIGNALS_BY_BUS
         .computeIfAbsent(bus.getName(), name -> new ArrayList<>())
         .addAll(List.of(device.signals()));
+  }
+
+  // Devices default to 100 Hz on CAN FD, so a faster loop would just re-read the same value. Ask
+  // for one sample per loop instead. Phoenix promotes unsupported rates to the next one up, and
+  // caps at 1000 Hz. This costs CAN bandwidth - check CANBus.getStatus().BusUtilization after
+  // changing it, and keep the swerve bus to itself if it climbs.
+  private static final double SIGNAL_FREQUENCY_HZ = 1.0 / Robot.PERIOD_SECONDS;
+
+  /**
+   * Asks every device for one sample per robot loop. Call once from {@link frc.robot.Robot}'s
+   * constructor - by then every device has registered, and these are blocking calls that have no
+   * business in the periodic path.
+   */
+  public static void initialize() {
+    if (RunMode.current() == RunMode.REPLAY) {
+      return; // no devices to configure; the log already holds what they said
+    }
+    for (List<BaseStatusSignal> busSignals : SIGNALS_BY_BUS.values()) {
+      BaseStatusSignal.setUpdateFrequencyForAll(SIGNAL_FREQUENCY_HZ, busSignals);
+    }
   }
 
   /** Reads every device and hands its values to the log. Call once, at the top of the loop. */

@@ -93,10 +93,23 @@ Also present, logged by AdvantageKit itself (all verified in a real sim log):
 **Finding auto/teleop start:** `/DriverStation/Enabled` flips true at the start of the active mode;
 `/DriverStation/OpMode` tells you by name which OpMode was selected.
 
-**Vision keys:** LimelightLib's NT tables (`/limelight-br/*` raw results, `/limelight_telemetry/*`
-accepted/rejected estimates, `/limelightshared/robot_orientation_set`) are **live-only now** — view
-them in AdvantageScope while connected, but they are not recorded to the `.wpilog` (nothing routes
-them through `Logger`). In **sim there is no Limelight**, so they're empty anyway.
+**Vision keys:** `Hardware/Limelight/<name>/*` holds the whole frame, ~55 keys per camera, in three
+groups of parallel arrays tied together by frame index:
+
+| Group | Entries per frame | Examples |
+| --- | --- | --- |
+| Frame | 1 | `TxDegrees`, `TargetDistanceMeters`, `CaptureLatencyMs`, `Imu*` (yaw/pitch/roll, gyro Z, accel XYZ) |
+| Estimate | 2 (MegaTag1, MegaTag2) | `Poses`, `TagCounts`, `TagSpanMeters`, `StdDevX/Y/Theta`, `RejectionFlags` |
+| Tag | one per tag seen | `TagIds`, `TagAmbiguity`, `RobotPoseTargetSpace`, `TargetPoseRobotSpace`, `RobotPoseFieldSpaceMegaTag2` |
+
+All of it is an **input**, so a formula you write next season can use a value you never consumed this
+season. `Vision/<name>/*` alongside it is our *decisions* (`Accepted`, `AcceptedStdDevXY`) — outputs,
+which recompute on replay.
+
+LimelightLib's own NT tables (`/limelight-br/*`, `/limelight_telemetry/*`) are still live-only —
+nothing routes NT topics to the log — but you no longer need them: everything the library parses out
+of a frame is in the keys above. In **sim** a fake tag is synthesised (ID 1 at x=3 m), so the tag
+keys are populated but invented.
 
 ## Reading `.wpilog` — AdvantageScope (interactive)
 

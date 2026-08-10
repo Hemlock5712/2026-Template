@@ -4,15 +4,13 @@
 
 package frc.robot.subsystems.vision;
 
-import com.limelightvision.Limelight;
 import com.limelightvision.Limelight.PoseEstimateConfig;
+import frc.robot.Robot;
 import frc.robot.hardware.LoggedLimelight;
 import frc.robot.hardware.LoggedLimelight.Estimate;
 import frc.robot.subsystems.DriveMechanism;
-import frc.robot.utils.RunMode;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.command3.Scheduler;
-import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.linalg.VecBuilder;
 
 /**
@@ -31,24 +29,29 @@ import org.wpilib.math.linalg.VecBuilder;
  * Vision/*}.
  */
 public class Vision {
-  // How far away tags are still trusted; past this they are too noisy to help.
-  private static final double MAX_TAG_DISTANCE_METERS = 4.0;
+  // Two or more tags: MegaTag1 solves from the tag corners alone, so its heading owes nothing to
+  // the gyro and we let it correct ours. One tag: MegaTag1 is ambiguous, so use MegaTag2 - but its
+  // heading IS the gyro heading we sent the camera, so feeding it back would count it twice.
+  private static final int MIN_TAGS_FOR_MEGATAG1 = 2;
 
-  // Trust numbers (smaller = trust vision more): xy = 0.15 * d^2 / sqrt(n). Error grows with
-  // distance squared (farther tags look smaller); more tags average the noise down.
-  private static final double XY_STD_DEV = 0.15;
+  // Trust numbers (smaller = trust vision more): base * d^2 / sqrt(n). Error grows with distance
+  // squared (farther tags look smaller); more tags average the noise down. TODO: tune both bases.
+  private static final double XY_STD_DEV = 0.15; // meters, at 1 m off one tag
+  private static final double OMEGA_STD_DEV =
+      0.5; // radians - heading is trusted less than position
   private static final double DISTANCE_EXPONENT = 2.0;
 
-  // Heading never comes from vision, so make the estimator ignore it entirely.
-  private static final double HEADING_STD_DEV = Double.MAX_VALUE;
+  // Hand this to the estimator and it ignores that axis completely.
+  private static final double UNTRUSTED = Double.MAX_VALUE;
 
-  private static final int MT1_MIN_TAGS = 2;
-  private static final int MT2_MIN_TAGS = 1;
+  // Past this a tag is too small to measure well; spin faster than this and the frame is smeared.
+  private static final double MAX_TAG_DISTANCE_METERS = 4.0;
+  private static final double MAX_SPIN_RAD_PER_SEC = 2 * Math.PI;
 
-  // Spin faster than this (1 full turn per second) and we stop trusting MegaTag2. See accept().
-  private static final double MAX_SPIN_FOR_MT2_RAD_PER_SEC = 2 * Math.PI;
+  // Send the heading at 50 Hz however fast the robot loop runs. Rounds to 1 on a 50 Hz loop.
+  private static final int HEADING_BROADCAST_DIVIDER =
+      Math.max(1, (int) Math.round(0.02 / Robot.PERIOD_SECONDS));
 
-  // Let the library through on anything structurally sound; the gates below are ours.
   private static final PoseEstimateConfig PERMISSIVE_MT1 =
       PoseEstimateConfig.defaultMT1().withMinTagCount(1).withMaxAvgTagDistance(Double.MAX_VALUE);
   private static final PoseEstimateConfig PERMISSIVE_MT2 =
@@ -71,34 +74,30 @@ public class Vision {
     // CCW+). One call covers all of them - see setUseSharedOrientation below.
     //
     // ORDER MATTERS: these run in the order registered, so send the heading BEFORE reading the
-    // cameras. And keep it at 50 Hz - this call ends in a full NetworkTables flush, which is far
-    // too expensive for the fast odometry thread.
+    // cameras. Held to 50 Hz by the divider: this call ends in a full NetworkTables flush, which is
+    // far too expensive to do every loop, and a camera solving at 30 fps cannot use it any faster.
     Scheduler.getDefault()
         .addPeriodic(
-            () -> {
-              if (RunMode.current() == RunMode.REPLAY) {
-                return; // nothing to talk to; the log already holds what the cameras answered
+            new Runnable() {
+              private int loop = 0;
+
+              @Override
+              public void run() {
+                if (loop++ % HEADING_BROADCAST_DIVIDER != 0) {
+                  return;
+                }
+                LoggedLimelight.setSharedRobotOrientation(
+                    drivetrain.getPose().getRotation().getDegrees(),
+                    Math.toDegrees(drivetrain.getFieldVelocity().omega));
               }
-              Limelight.setSharedRobotOrientation(
-                  drivetrain.getPose().getRotation().getDegrees(),
-                  Math.toDegrees(drivetrain.getFieldVelocity().omega),
-                  0,
-                  0,
-                  0,
-                  0);
             });
 
     // In sim there is no camera, so feed the fake one the pose it should pretend to see.
-    if (RunMode.current() == RunMode.SIM) {
-      LoggedLimelight.setSimPoseSource(drivetrain::getPose);
-    }
+    LoggedLimelight.setSimPoseSource(drivetrain::getPose);
 
     for (LoggedLimelight camera : cameras) {
-      camera
-          .camera()
-          .withPoseEstimateConfig_MT1(PERMISSIVE_MT1)
-          .withPoseEstimateConfig_MT2(PERMISSIVE_MT2);
-      camera.camera().setUseSharedOrientation(true); // heading comes from the shared feed above
+      // heading comes from the shared feed above
+      camera.configure(PERMISSIVE_MT1, PERMISSIVE_MT2);
       Vision vision = new Vision(camera, drivetrain);
       Scheduler.getDefault().addPeriodic(vision::update);
     }
@@ -109,55 +108,53 @@ public class Vision {
     // Always, even if nothing is used from it - the log has one entry per loop either way.
     camera.refresh();
 
-    // Spinning fast means the heading we sent is stale by the time the camera solves the frame,
-    // so MegaTag2 answers get smeared. MegaTag1 ignores our heading, so it stays trustworthy.
-    boolean spinningTooFast =
-        Math.abs(drivetrain.getFieldVelocity().omega) > MAX_SPIN_FOR_MT2_RAD_PER_SEC;
+    // A fast spin smears the image and staleness the heading we sent, so throw the frame away.
+    // This drops MegaTag1 too, which costs us a gyro-free heading exactly when the gyro is working
+    // hardest - move the check into accept()'s MegaTag2 branch if you would rather keep it.
+    boolean spinningTooFast = Math.abs(drivetrain.getFieldVelocity().omega) > MAX_SPIN_RAD_PER_SEC;
 
-    Estimate best = null;
+    int accepted = 0;
     for (Estimate estimate : camera.estimates()) {
       if (!accept(estimate, spinningTooFast)) {
         continue;
       }
-      // Prefer MegaTag1: it does not depend on a heading that may be stale.
-      if (best == null || (best.megaTag2() && !estimate.megaTag2())) {
-        best = estimate;
-      }
-    }
+      accepted++;
+      double xy = deviation(XY_STD_DEV, estimate);
+      // MegaTag2's heading came from us, so only MegaTag1 is allowed to move ours.
+      double omega = estimate.megaTag2() ? UNTRUSTED : deviation(OMEGA_STD_DEV, estimate);
 
+      Logger.recordOutput(logKey + "/AcceptedPose", estimate.pose());
+      Logger.recordOutput(logKey + "/AcceptedStdDevXY", xy);
+      Logger.recordOutput(logKey + "/AcceptedStdDevOmega", omega);
+      Logger.recordOutput(logKey + "/AcceptedIsMegaTag2", estimate.megaTag2());
+      drivetrain.addVisionMeasurement(
+          estimate.pose(), estimate.timestampSeconds(), VecBuilder.fill(xy, xy, omega));
+    }
     Logger.recordOutput(logKey + "/Offered", camera.estimates().size());
-    Logger.recordOutput(logKey + "/Accepted", best != null);
-    if (best == null) {
-      return;
-    }
-
-    double xy = standardDeviation(best);
-    Logger.recordOutput(logKey + "/AcceptedPose", best.pose());
-    Logger.recordOutput(logKey + "/AcceptedStdDevXY", xy);
-    Logger.recordOutput(logKey + "/AcceptedIsMegaTag2", best.megaTag2());
-    drivetrain.addVisionMeasurement(
-        best.pose(), best.timestampSeconds(), VecBuilder.fill(xy, xy, HEADING_STD_DEV));
+    Logger.recordOutput(logKey + "/Accepted", accepted);
   }
 
-  /** Our trust rules. Change these, replay an old log, and the answers change with them. */
+  /**
+   * Our trust rules. Change these, replay an old log, and the answers change with them.
+   *
+   * <p>{@code rejectionFlags} is the library's own verdict, but only on things we could never
+   * re-derive from the log - a non-finite solve, a missing timestamp, a pose off the field. Its
+   * tunable gates are left switched off in {@code PERMISSIVE_*} on purpose: they run at record
+   * time, so leaning on them would bake this decision into the log instead of leaving it
+   * re-runnable.
+   */
   private boolean accept(Estimate estimate, boolean spinningTooFast) {
-    if (!estimate.soundEnough() || estimate.pose().equals(new Pose2d())) {
-      return false;
-    }
-    if (estimate.avgTagDistanceMeters() > MAX_TAG_DISTANCE_METERS) {
-      return false;
-    }
-    if (estimate.megaTag2()) {
-      return !spinningTooFast && estimate.tagCount() >= MT2_MIN_TAGS;
-    }
-    return estimate.tagCount() >= MT1_MIN_TAGS;
+    boolean wantMegaTag2 = estimate.tagCount() < MIN_TAGS_FOR_MEGATAG1;
+    return estimate.megaTag2() == wantMegaTag2
+        && estimate.rejectionFlags() == 0
+        && estimate.tagCount() > 0
+        && estimate.avgTagDistanceMeters() <= MAX_TAG_DISTANCE_METERS
+        && !spinningTooFast;
   }
 
-  /** How much to distrust this estimate, in meters. Bigger = the estimator leans on it less. */
-  private double standardDeviation(Estimate estimate) {
+  /** One trust number, from a base value scaled by how far the tags are and how many there are. */
+  private static double deviation(double base, Estimate estimate) {
     double distance = Math.max(estimate.avgTagDistanceMeters(), 0.1);
-    return XY_STD_DEV
-        * Math.pow(distance, DISTANCE_EXPONENT)
-        / Math.sqrt(Math.max(estimate.tagCount(), 1));
+    return base * Math.pow(distance, DISTANCE_EXPONENT) / Math.sqrt(estimate.tagCount());
   }
 }

@@ -9,6 +9,9 @@ import org.wpilib.driverstation.DriverStationErrors;
 import org.wpilib.driverstation.MatchState;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
+import org.wpilib.math.kinematics.ChassisAccelerations;
+import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.vision.apriltag.AprilTagFieldLayout;
 import org.wpilib.vision.apriltag.AprilTagFields;
 
@@ -45,16 +48,65 @@ public final class AllianceFlip {
   }
 
   /**
+   * True when a blue-authored position needs flipping. Check this once instead of calling {@link
+   * #apply} in a loop - it reads the driver station every time.
+   */
+  public static boolean shouldFlip() {
+    return isRed() && FIELD != null;
+  }
+
+  /**
    * The given blue-origin pose, flipped to the red side if we are on red. On blue it is returned
    * unchanged.
    */
   public static Pose2d apply(Pose2d bluePose) {
-    if (!isRed() || FIELD == null) {
-      return bluePose;
-    }
+    return shouldFlip() ? flip(bluePose) : bluePose;
+  }
+
+  /** Flips a pose regardless of alliance. Only call this behind {@link #shouldFlip()}. */
+  public static Pose2d flip(Pose2d pose) {
     return new Pose2d(
-        FIELD.getFieldLength() - bluePose.getX(),
-        FIELD.getFieldWidth() - bluePose.getY(),
-        bluePose.getRotation().plus(Rotation2d.k180deg));
+        flip(pose.getTranslation()), new Rotation2d(flipHeading(pose.getRotation().getRadians())));
+  }
+
+  /** Field length in m, or 0 if the layout failed to load. */
+  public static double fieldLength() {
+    return FIELD == null ? 0 : FIELD.getFieldLength();
+  }
+
+  /** Field width in m, or 0 if the layout failed to load. */
+  public static double fieldWidth() {
+    return FIELD == null ? 0 : FIELD.getFieldWidth();
+  }
+
+  /** Flips a field position regardless of alliance. */
+  public static Translation2d flip(Translation2d position) {
+    if (FIELD == null) {
+      return position;
+    }
+    return new Translation2d(
+        FIELD.getFieldLength() - position.getX(), FIELD.getFieldWidth() - position.getY());
+  }
+
+  /**
+   * Flips a heading regardless of alliance. Does NOT wrap to +/-pi, so a continuously-unwrapped
+   * heading (like a planned path's) stays continuous - wrapping it would make an interpolation
+   * across the seam sweep almost a full turn the wrong way.
+   */
+  public static double flipHeading(double headingRadians) {
+    return headingRadians + Math.PI;
+  }
+
+  /**
+   * Flips a field-relative velocity regardless of alliance. Both linear components negate; omega
+   * keeps its sign, because rotating the whole field preserves handedness.
+   */
+  public static ChassisVelocities flip(ChassisVelocities velocity) {
+    return new ChassisVelocities(-velocity.vx, -velocity.vy, velocity.omega);
+  }
+
+  /** Flips a field-relative acceleration regardless of alliance. Same signs as {@link #flip}. */
+  public static ChassisAccelerations flip(ChassisAccelerations acceleration) {
+    return new ChassisAccelerations(-acceleration.ax, -acceleration.ay, acceleration.alpha);
   }
 }

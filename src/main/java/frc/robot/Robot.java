@@ -28,6 +28,16 @@ import org.wpilib.framework.OpModeRobot;
  * Robot} it is constructed with.
  */
 public class Robot extends OpModeRobot {
+  /**
+   * How often everything runs: 200 Hz, not WPILib's usual 50. A drive command only moves in steps
+   * of {@code acceleration * PERIOD_SECONDS}, so a shorter step means the motor is asked for a
+   * smaller jump each time and its current spikes less - which is what decides whether a wheel
+   * breaks loose.
+   *
+   * <p>Anything that integrates or profiles must use this, never a hard-coded 0.02.
+   */
+  public static final double PERIOD_SECONDS = 0.005;
+
   public final DriveMechanism drivetrain = new DriveMechanism();
 
   /* Example mechanisms. The poses that combine them (stow/intake/score) are at the bottom. */
@@ -40,6 +50,8 @@ public class Robot extends OpModeRobot {
   public final LoggedLimelight limelightBL = new LoggedLimelight("limelight-bl");
 
   public Robot() {
+    super(PERIOD_SECONDS);
+
     // AdvantageKit logging: .wpilog file (./logs in sim, USB on the robot) plus live
     // NetworkTables for AdvantageScope. See the log-reading skill.
     Logger.recordMetadata("ProjectName", "2027-Template");
@@ -61,6 +73,9 @@ public class Robot extends OpModeRobot {
     if (RunMode.current() == RunMode.REPLAY) {
       setUseTiming(false);
     }
+
+    // Every device above has registered by now (they are fields, so they construct first).
+    LoggedHardware.initialize();
 
     // Always-on bindings go here - they survive OpMode switches. (None needed yet.)
 

@@ -68,12 +68,16 @@ public final class LoggedHardware {
   // changing it, and keep the swerve bus to itself if it climbs.
   private static final double SIGNAL_FREQUENCY_HZ = 1.0 / Robot.PERIOD_SECONDS;
 
+  private static boolean initialized = false;
+
   /**
-   * Asks every device for one sample per robot loop. Call once from {@link frc.robot.Robot}'s
-   * constructor - by then every device has registered, and these are blocking calls that have no
-   * business in the periodic path.
+   * Asks every device for one sample per robot loop. Best called once from {@link
+   * frc.robot.Robot}'s constructor - by then every device has registered, and these are blocking
+   * calls that have no business in the periodic path. Forgetting it is not fatal: the first {@link
+   * #refreshAll} does it instead, costing one slow loop.
    */
   public static void initialize() {
+    initialized = true;
     if (RunMode.current() == RunMode.REPLAY) {
       return; // no devices to configure; the log already holds what they said
     }
@@ -84,6 +88,9 @@ public final class LoggedHardware {
 
   /** Reads every device and hands its values to the log. Call once, at the top of the loop. */
   public static void refreshAll() {
+    if (!initialized) {
+      initialize();
+    }
     if (RunMode.current() != RunMode.REPLAY) {
       // One round trip per bus, instead of one per getter.
       for (List<BaseStatusSignal> busSignals : SIGNALS_BY_BUS.values()) {

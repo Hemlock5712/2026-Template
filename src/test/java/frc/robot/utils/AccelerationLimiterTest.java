@@ -60,19 +60,74 @@ class AccelerationLimiterTest {
   }
 
   @Test
-  void spinningFastEatsTheTractionBudget() {
-    // Centripetal force to hold the modules on their circle is real and is spent first. At 6 rad/s
-    // it alone exceeds the friction budget, so almost nothing is left for driving.
-    var spinning = new ChassisVelocities(0, 0, 6.0);
-    var driving =
+  void aFastSpinCanStillBeStopped() {
+    // The force holding a module on its circle comes through the frame, not the carpet - it sums to
+    // zero force AND zero moment across the modules. Charging it to the wheels made scale 0 above
+    // 5.48 rad/s, and scale gates braking as well, so the spin could never be commanded away.
+    var state = new ChassisVelocities(0, 0, 6.0);
+    for (int i = 0; i < 400; i++) { // two seconds of asking for a full stop
+      state = AccelerationLimiter.limit(state, stopped(), Rotation2d.kZero, DT, CONFIG);
+    }
+    assertEquals(0.0, state.omega, 1e-9, "the spin should have stopped");
+  }
+
+  @Test
+  void theLimitDoesNotDependOnHowHardYouAsk() {
+    // A traction limit belongs to the robot, not the joystick. The solver used to start at "give me
+    // everything" and halve, so eight passes only ever bought a factor of 256: a big enough request
+    // ran out of passes and came back as low as zero.
+    double closedForm = 1.1 * 9.81 / (1 + 1.1 * 0.2 / HALF); // mu*g / (1 + mu*h/L)
+    for (double target : new double[] {0.5, 5.0, 9.0, 20.0, 100.0}) {
+      var out =
+          AccelerationLimiter.limit(
+              stopped(), new ChassisVelocities(target, 0, 0), Rotation2d.kZero, DT, CONFIG);
+      assertEquals(closedForm, out.vx / DT, 1e-3, "target " + target + " got a different limit");
+    }
+  }
+
+  @Test
+  void theLimitDoesNotDependOnTheLoopRate() {
+    // Requested acceleration is dv/dt, so a shorter loop asks for more - which used to cost the
+    // solver a pass each time it halved. Below 4 ms a full-stick request came back as zero.
+    double from50Hz = accelFromStop(1.0 / 50);
+    for (int hz : new int[] {100, 200, 500, 1000}) {
+      assertEquals(from50Hz, accelFromStop(1.0 / hz), 1e-3, hz + " Hz changed the limit");
+    }
+  }
+
+  private static double accelFromStop(double dt) {
+    var out =
         AccelerationLimiter.limit(
-            spinning, new ChassisVelocities(5.0, 0, 6.0), Rotation2d.kZero, DT, CONFIG);
-    var still =
-        AccelerationLimiter.limit(
-            stopped(), new ChassisVelocities(5.0, 0, 0), Rotation2d.kZero, DT, CONFIG);
-    assertTrue(
-        driving.vx - spinning.vx < still.vx,
-        "a fast spin must leave less room to accelerate than standing still");
+            stopped(), new ChassisVelocities(9.0, 0, 0), Rotation2d.kZero, dt, CONFIG);
+    return out.vx / dt;
+  }
+
+  @Test
+  void aSingleFrontModuleIsTreatedLikeTwo() {
+    // KNOWN BUG, pinned so a fix is visible: shift() divides the pitching moment by 2*max|x|, which
+    // assumes two wheels per axle. A diamond has one at the front, gets half the load transfer it
+    // owes, and is allowed MORE acceleration than the square despite less front grip to lose.
+    var diamond =
+        new AccelerationLimiter.Config(
+            new Translation2d[] {
+              new Translation2d(0.35, 0.0),
+              new Translation2d(0.0, 0.30),
+              new Translation2d(0.0, -0.30),
+              new Translation2d(-0.35, 0.0),
+            },
+            60.0,
+            1.1,
+            0.2,
+            Motor.KRAKEN_X60_FOC,
+            7.3636,
+            0.05504,
+            120.0);
+    var request = new ChassisVelocities(9.0, 0, 0);
+    double square =
+        AccelerationLimiter.limit(stopped(), request, Rotation2d.kZero, DT, CONFIG).vx / DT;
+    double odd =
+        AccelerationLimiter.limit(stopped(), request, Rotation2d.kZero, DT, diamond).vx / DT;
+    assertTrue(odd > square, "the diamond is allowed more, which is backwards");
   }
 
   @Test
@@ -100,8 +155,9 @@ class AccelerationLimiterTest {
     // robot is allowed to accelerate harder than a forwards-facing one.
     //
     // Only quarter turns. At 45 degrees the answer legitimately differs - a diagonal push unloads
-    // one corner by BOTH transfer components, where an axis-aligned push spreads it over an axle.
-    // That is the cost of splitting force equally between modules, not a frame error.
+    // one corner by BOTH transfer components, so the corner sees sqrt(2) times the transfer an
+    // axle does: mu*g/(1 + sqrt(2)*mu*h/L) instead of mu*g/(1 + mu*h/L). Here that is 4.85 against
+    // 5.78, and the gap widens with CG height. Not a frame error.
     var request = new ChassisVelocities(9.0, 0, 0);
     double straight =
         magnitude(AccelerationLimiter.limit(stopped(), request, Rotation2d.kZero, DT, CONFIG));
@@ -130,6 +186,21 @@ class AccelerationLimiterTest {
 
     double accel = Math.hypot(out.vx - current.vx, out.vy - current.vy) / DT;
     assertTrue(accel <= 5.79, "braking at " + accel + " m/s^2 exceeds the traction limit");
+  }
+
+  @Test
+  void brakingDoesNotFallOffNearTopSpeed() {
+    // A back-driven motor pulls its full current limit however fast it spins - back-EMF helps push
+    // the current through - so the torque-speed curve only applies when it is DRIVING. Modelling
+    // braking on the motoring curve said a robot at 4.5 m/s could shed 0.57 m/s^2 and never stop.
+    assertEquals(brakingAccel(1.0), brakingAccel(4.5), 1e-9, "braking must not weaken with speed");
+    assertTrue(brakingAccel(4.5) > 5.0, "should still be traction-limited, not motor-limited");
+  }
+
+  private static double brakingAccel(double speed) {
+    var cruising = new ChassisVelocities(speed, 0, 0);
+    var out = AccelerationLimiter.limit(cruising, stopped(), Rotation2d.kZero, DT, CONFIG);
+    return (speed - out.vx) / DT;
   }
 
   @Test

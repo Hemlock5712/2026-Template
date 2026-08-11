@@ -27,10 +27,12 @@ public final class AccelerationLimiter {
       Translation2d[] moduleLocations,
       /** Robot mass with bumpers and battery, kg. WEIGH IT. */
       double massKg,
-      /** Grip: how many g of sideways force the carpet gives before sliding. MEASURE IT. */
+      /** Grip in g before the wheels slide. MEASURE IT - see cgHeightMeters for what it means. */
       double frictionCoefficient,
       /**
        * Height of the centre of gravity, metres - decides how much load shifts under acceleration.
+       * Set it to 0 to skip load transfer entirely, and then the grip number above is the WHOLE
+       * ROBOT's limit in g, not the carpet's: one measured number rather than two guessed ones.
        */
       double cgHeightMeters,
       Motor motor,
@@ -41,8 +43,8 @@ public final class AccelerationLimiter {
 
   private static final double GRAVITY = 9.81;
 
-  /** Enough for the load-transfer solve to settle; it converges in about four. */
-  private static final int SOLVER_PASSES = 8;
+  /** Friction is solved outright; these only settle the motor curve against the wheel speed. */
+  private static final int SOLVER_PASSES = 3;
 
   private AccelerationLimiter() {}
 
@@ -74,11 +76,6 @@ public final class AccelerationLimiter {
     double ay = (target.vy - current.vy) / dt;
     double alpha = (target.omega - current.omega) / dt;
 
-    // Load transfer depends on the acceleration, and the allowed acceleration depends on the load
-    // transfer, so solve for the pair that agree. Averaging each step damps it - taking the raw
-    // answer each time makes it swing between "all the grip" and "none of it" forever.
-    // Start from "give me all of it" and let the passes pull it down, so a request that needs no
-    // limiting comes back untouched rather than creeping up on 1.0.
     // Turn the field-frame acceleration into the robot's own frame, which is where the wheels are.
     double cos = heading.getCos();
     double sin = heading.getSin();
@@ -86,13 +83,12 @@ public final class AccelerationLimiter {
     double ayRobot = -ax * sin + ay * cos;
     ChassisVelocities currentRobot = current.toRobotRelative(heading);
 
-    double scale = 1.0;
+    // Start at zero: it predicts the wheel speeds where they are now, which is right to within one
+    // loop's acceleration. Starting at 1.0 predicts a speed the robot never reaches.
+    double scale = 0.0;
     for (int i = 0; i < SOLVER_PASSES; i++) {
-      scale =
-          0.5 * (scale + allowedFraction(axRobot, ayRobot, alpha, currentRobot, dt, config, scale));
+      scale = allowedFraction(axRobot, ayRobot, alpha, currentRobot, dt, config, scale);
     }
-    // One last undamped look, now that the load transfer has settled.
-    scale = allowedFraction(axRobot, ayRobot, alpha, currentRobot, dt, config, scale);
 
     // The END of this interval. This is the ramp's state, which the caller carries into the next
     // call; what it actually COMMANDS is the midpoint between the two (see midpoint()), because
@@ -129,58 +125,51 @@ public final class AccelerationLimiter {
     double predictedVy = current.vy + ay * previousScale * dt;
     double predictedOmega = current.omega + alpha * previousScale * dt;
 
-    double halfLength = maxAbs(locations, true);
-    double halfWidth = maxAbs(locations, false);
+    // Newtons moved PER UNIT OF SCALE - linear in scale, which is what makes the solve below exact.
     double transferX =
-        shift(config.massKg(), ax * previousScale, config.cgHeightMeters(), 2.0 * halfLength);
+        shift(config.massKg(), ax, config.cgHeightMeters(), 2.0 * maxAbs(locations, true));
     double transferY =
-        shift(config.massKg(), ay * previousScale, config.cgHeightMeters(), 2.0 * halfWidth);
+        shift(config.massKg(), ay, config.cgHeightMeters(), 2.0 * maxAbs(locations, false));
 
     double staticNormal = config.massKg() * GRAVITY / count;
     double fraction = 1.0;
 
     for (Translation2d location : locations) {
-      // Holding a module on its circle around the robot centre costs force we cannot scale away -
-      // it is set by how fast we are already spinning. At 6 rad/s it alone is over 15 m/s^2. Spend
-      // it first, then see what is left for driving.
-      double fixedForce =
-          massPerModule
-              * predictedOmega
-              * predictedOmega
-              * Math.hypot(location.getX(), location.getY());
-
-      // The part we asked for, and can therefore scale back: translation plus the tangential push
-      // of angular acceleration.
-      double commandedForce =
-          massPerModule * Math.hypot(ax - alpha * location.getY(), ay + alpha * location.getX());
+      // Translation plus the tangential push of angular acceleration. A steady spin is NOT in here:
+      // the force holding a module on its circle comes through the frame, not the carpet.
+      double forceX = ax - alpha * location.getY();
+      double forceY = ay + alpha * location.getX();
+      double commandedForce = massPerModule * Math.hypot(forceX, forceY);
       if (commandedForce <= 1e-9) {
         continue;
       }
 
-      // Load shifts off the wheels we are accelerating away from and onto the ones behind.
-      double normal =
-          staticNormal
-              - Math.signum(location.getX()) * transferX
-              - Math.signum(location.getY()) * transferY;
-      double grip = config.frictionCoefficient() * Math.max(normal, 0.0);
+      // scale * commanded <= mu * (static - scale * transfer), solved for scale. A wheel the load
+      // moves ONTO gains grip faster than demand, goes negative here, and can never be the slipper.
+      double transfer =
+          Math.signum(location.getX()) * transferX + Math.signum(location.getY()) * transferY;
+      double denominator = commandedForce + config.frictionCoefficient() * transfer;
+      if (denominator > 0.0) {
+        fraction = Math.min(fraction, config.frictionCoefficient() * staticNormal / denominator);
+      }
 
-      double wheelSpeed =
-          Math.hypot(
-              predictedVx - predictedOmega * location.getY(),
-              predictedVy + predictedOmega * location.getX());
+      double moduleVx = predictedVx - predictedOmega * location.getY();
+      double moduleVy = predictedVy + predictedOmega * location.getX();
+
+      // A motor only loses torque to speed when it is DRIVING. Back-driven it fights nothing -
+      // back-EMF helps push current through - so braking gets the full current-limited force at any
+      // speed. Passing 0 asks the curve for exactly that. Without this a robot at 4.5 m/s is
+      // modelled as unable to stop, because the motoring curve is zero at free speed.
+      boolean braking = forceX * moduleVx + forceY * moduleVy < 0.0;
       double motorForce =
           config
               .motor()
               .maxForceNewtons(
-                  wheelSpeed,
+                  braking ? 0.0 : Math.hypot(moduleVx, moduleVy),
                   config.driveGearRatio(),
                   config.wheelRadiusMeters(),
                   config.currentLimitAmps());
-
-      // Conservative: assumes the fixed and commanded forces point the same way. They often do not,
-      // which leaves a little on the table - the safe direction to be wrong in.
-      double headroom = Math.min(grip, motorForce) - fixedForce;
-      fraction = Math.min(fraction, Math.max(0.0, headroom) / commandedForce);
+      fraction = Math.min(fraction, motorForce / commandedForce);
     }
     return Math.max(0.0, Math.min(1.0, fraction));
   }
@@ -193,7 +182,11 @@ public final class AccelerationLimiter {
         (current.omega + next.omega) * 0.5);
   }
 
-  /** Newtons shifted off one axle onto the other, per wheel. */
+  /**
+   * Newtons shifted off one axle onto the other, per wheel. The trailing /2 assumes TWO WHEELS PER
+   * AXLE: right for a rectangle, wrong for anything else - a diamond gets half the transfer it
+   * owes.
+   */
   private static double shift(double massKg, double accel, double cgHeight, double wheelbase) {
     return wheelbase <= 0 ? 0.0 : massKg * accel * cgHeight / wheelbase / 2.0;
   }

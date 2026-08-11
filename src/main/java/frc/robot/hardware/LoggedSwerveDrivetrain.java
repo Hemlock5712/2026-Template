@@ -6,6 +6,7 @@ package frc.robot.hardware;
 
 import com.ctre.phoenix6.BaseStatusSignal;
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import frc.robot.Robot;
 import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 import frc.robot.utils.AccelerationLimiter;
@@ -243,11 +244,11 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     ChassisVelocities wanted = commandedVelocity(request);
     ChassisVelocities wantedField = robotRelative ? wanted.toFieldRelative(heading) : wanted;
 
-    // Real elapsed time, not the nominal period. Two things need this: the loop jitters a little,
-    // and a command handover calls setControl twice in one cycle (the old command's Idle, then the
-    // new command's request). Charging both calls a full period would let the ramp advance twice.
+    // Real elapsed time, so a handover's second call in the same cycle does not advance the ramp
+    // twice. CAPPED at one period: dt cancels out of the ramp, so a stale clock - the first call
+    // after boot, where lastLimitSeconds is still 0 - would hand over the whole target at once.
     double now = RobotController.getTime() / 1.0e6;
-    double dt = now - lastLimitSeconds;
+    double dt = Math.min(now - lastLimitSeconds, Robot.PERIOD_SECONDS);
     lastLimitSeconds = now;
 
     ChassisVelocities nextField =
@@ -296,7 +297,15 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     }
   }
 
-  /** TODO: weigh the robot, measure the carpet, and measure the CG height. These are estimates. */
+  /**
+   * CG height is 0 on purpose, and 1.1 g is what the 2026 robot ran at with no CG term - one
+   * measured number rather than three guessed ones. Load transfer does not change a swerve's TOTAL
+   * grip anyway: every newton the front wheels lose, the rear ones gain, and all four drive.
+   *
+   * <p>TODO: weigh the robot, and re-measure the grip number on the real one. Put the CG height
+   * back when the robot exists - above about 0.23 m it starts tipping before it slips, and only the
+   * height term can see that coming.
+   */
   private AccelerationLimiter.Config limiterConfig() {
     if (limiterConfig == null) {
       limiterConfig =
@@ -304,7 +313,7 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
               drivetrain.getModuleLocations(),
               60.0,
               1.1,
-              0.2,
+              0.0,
               Motor.KRAKEN_X60_FOC,
               TunerConstants.FrontLeft.DriveMotorGearRatio,
               TunerConstants.FrontLeft.WheelRadius,

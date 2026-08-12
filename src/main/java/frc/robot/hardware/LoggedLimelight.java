@@ -15,15 +15,10 @@ import frc.robot.utils.RunMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
-import java.util.function.Supplier;
 import org.littletonrobotics.junction.AutoLog;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Pose3d;
-import org.wpilib.math.geometry.Rotation2d;
-import org.wpilib.math.geometry.Rotation3d;
-import org.wpilib.math.geometry.Translation2d;
 
 /**
  * A Limelight whose whole frame goes through the log, so any vision decision can be replayed.
@@ -39,6 +34,9 @@ import org.wpilib.math.geometry.Translation2d;
  *
  * <p>What replay cannot redo is the MegaTag solve itself: that needs the raw image, which never
  * reaches the robot. Everything computed *from* the solve is ours to change and re-run.
+ *
+ * <p>There is no vision simulation: in sim these keys are logged empty, so a sim log has the vision
+ * plumbing but no sightings. Replay a real-robot log to exercise the vision code.
  */
 public class LoggedLimelight {
   /** One camera's frames for a single loop. */
@@ -164,9 +162,6 @@ public class LoggedLimelight {
   private final List<Estimate> estimates = new ArrayList<>();
   private final List<Tag> tags = new ArrayList<>();
 
-  // Fixed seed: a sim run repeats exactly, which makes a replay comparison meaningful.
-  private final Random noise;
-
   /**
    * @param name the camera's NetworkTables name, e.g. "limelight-br".
    */
@@ -174,7 +169,6 @@ public class LoggedLimelight {
     this.camera = new Limelight(name);
     this.name = name;
     this.logKey = "Hardware/Limelight/" + name;
-    this.noise = new Random(name.hashCode());
   }
 
   /** This camera's name, e.g. "limelight-br". */
@@ -189,8 +183,8 @@ public class LoggedLimelight {
   public void refresh() {
     switch (RunMode.current()) {
       case REAL -> readFromCamera();
-      case SIM -> simulateFrame();
-      case REPLAY -> {} // the log already holds what the camera said
+      // SIM reports nothing: no camera, no fake tag. The keys are still logged, just empty.
+      case REPLAY, SIM -> {} // in replay the log already holds what the camera said
       default -> {}
     }
     Logger.processInputs(logKey, inputs);
@@ -537,107 +531,5 @@ public class LoggedLimelight {
     var poses = new Pose3d[n];
     java.util.Arrays.fill(poses, Pose3d.kZero);
     return poses;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Simulation only: a pretend AprilTag, so vision code has something to chew on
-  // with no camera plugged in.
-  // ---------------------------------------------------------------------------
-
-  // One imaginary tag on the field, its ID, and how far away it can still be seen.
-  private static final Translation2d SIM_TAG = new Translation2d(3.0, 0.0);
-  private static final int SIM_TAG_ID = 1;
-  private static final double SIM_MAX_SIGHT_METERS = 6.0;
-
-  // Closer than this and the camera makes out a second tag, so MegaTag1 becomes usable.
-  private static final double SIM_TWO_TAG_METERS = 2.5;
-
-  // Error grows with distance: 2 cm per metre of range.
-  private static final double SIM_NOISE_PER_METER = 0.02;
-
-  // How stale a solved frame is by the time we read it.
-  private static final double SIM_LATENCY_SECONDS = 0.03;
-
-  // A pretend camera IMU that drifts, so the heading audit in Vision has something to catch. Fake:
-  // a real one drifts with temperature and impacts, not linearly with time.
-  private static final double SIM_IMU_DRIFT_DEGREES_PER_SECOND = 0.5;
-
-  private static Supplier<Pose2d> simPose = null;
-
-  /**
-   * Tells the sim cameras where the robot really is, so the fake tag can be solved against it.
-   * Ignored outside simulation - in replay the frames come from the log, and on a real robot there
-   * is a real camera.
-   */
-  public static void setSimPoseSource(Supplier<Pose2d> trueRobotPose) {
-    if (RunMode.current() == RunMode.SIM) {
-      simPose = trueRobotPose;
-    }
-  }
-
-  private void simulateFrame() {
-    if (simPose == null) {
-      allocate(0, 0, 0);
-      return;
-    }
-    Pose2d truth = simPose.get();
-    double distance = truth.getTranslation().getDistance(SIM_TAG);
-    if (distance > SIM_MAX_SIGHT_METERS) {
-      allocate(0, 0, 0);
-      inputs.connected = true;
-      return;
-    }
-
-    int tagCount = distance < SIM_TWO_TAG_METERS ? 2 : 1;
-    double sigma = SIM_NOISE_PER_METER * distance;
-
-    // MegaTag1 and MegaTag2 both see the same frame, so they share its noise draw.
-    Pose2d seen =
-        new Pose2d(
-            truth.getX() + noise.nextGaussian() * sigma,
-            truth.getY() + noise.nextGaussian() * sigma,
-            Rotation2d.fromRadians(
-                truth.getRotation().getRadians() + noise.nextGaussian() * sigma * 0.1));
-
-    allocate(1, 2, 1);
-    inputs.connected = true;
-
-    inputs.frameIndices[0] = 0;
-    inputs.frameTimestampsSeconds[0] = Logger.getTimestamp() / 1.0e6 - SIM_LATENCY_SECONDS;
-    // The camera's IMU drifts away from the heading we send it; robotYaw is what we sent.
-    inputs.imuRobotYawDegrees[0] = truth.getRotation().getDegrees();
-    inputs.imuYawDegrees[0] =
-        truth.getRotation().getDegrees()
-            + SIM_IMU_DRIFT_DEGREES_PER_SECOND * Logger.getTimestamp() / 1.0e6;
-    inputs.targetDistanceMeters[0] = distance;
-    inputs.targetAreaPercent[0] = 1.0 / Math.max(distance, 0.1);
-
-    for (int i = 0; i < 2; i++) {
-      inputs.estimateFrameIndices[i] = 0;
-      inputs.poses[i] = seen;
-      inputs.timestampsSeconds[i] = inputs.frameTimestampsSeconds[0];
-      inputs.latencyMs[i] = SIM_LATENCY_SECONDS * 1000.0;
-      inputs.estimateTypes[i] = i == 1 ? "MT2_WPIBLUE" : "MT1_WPIBLUE";
-      inputs.tagCounts[i] = tagCount;
-      inputs.reportedTagCounts[i] = tagCount;
-      inputs.avgTagDistancesMeters[i] = distance;
-      inputs.megaTag2[i] = i == 1;
-    }
-
-    // The fake tag faces back down the field, so the robot approaching from -X sees its face.
-    Pose2d tagOnField = new Pose2d(SIM_TAG, Rotation2d.k180deg);
-    Pose2d robotInTag = seen.relativeTo(tagOnField);
-    inputs.tagIds[0] = SIM_TAG_ID;
-    inputs.tagFielded[0] = true;
-    inputs.tagDistanceToRobotMeters[0] = distance;
-    inputs.tagDistanceToCameraMeters[0] = distance;
-    inputs.robotPoseTargetSpace[0] =
-        new Pose3d(
-            robotInTag.getX(),
-            robotInTag.getY(),
-            0.0,
-            new Rotation3d(0.0, 0.0, robotInTag.getRotation().getRadians()));
-    inputs.robotPoseFieldSpace[0] = new Pose3d(seen);
-    inputs.robotPoseFieldSpaceMegaTag2[0] = new Pose3d(seen);
   }
 }

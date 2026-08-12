@@ -92,9 +92,6 @@ public class Vision {
               }
             });
 
-    // In sim there is no camera, so feed the fake one the pose it should pretend to see.
-    LoggedLimelight.setSimPoseSource(drivetrain::getPose);
-
     for (LoggedLimelight camera : cameras) {
       // heading comes from the shared feed above
       camera.configure(PERMISSIVE_MT1, PERMISSIVE_MT2);

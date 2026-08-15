@@ -39,9 +39,10 @@ public class TeleopOpMode extends PeriodicOpMode {
           .withDriveRequestType(DriveRequestType.Velocity);
 
   private final CommandNiDsXboxController driver = new CommandNiDsXboxController(0);
+  private final DriveMechanism drivetrain;
 
   public TeleopOpMode(Robot robot) {
-    final DriveMechanism drivetrain = robot.drivetrain;
+    drivetrain = robot.drivetrain;
 
     // WPILib axes: X is forward, Y is left - hence the minus signs on the sticks.
     drivetrain.setDefaultCommand(
@@ -63,5 +64,11 @@ public class TeleopOpMode extends PeriodicOpMode {
     // Hold Y: auto-score prep. Letting go stops the flywheel via its default command, so no
     // "stop" binding is needed here.
     driver.y().whileTrue(robot.autoScore());
+  }
+
+  /** Bindings clean themselves up; a default command does NOT - it would drive the next OpMode. */
+  @Override
+  public void close() {
+    drivetrain.setDefaultCommand(drivetrain.idle());
   }
 }

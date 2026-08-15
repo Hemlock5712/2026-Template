@@ -78,7 +78,7 @@ Driver selects it on the DS ─► constructor runs      (build bindings / the r
    │
    ├─ robot disabled & selected ─► disabledPeriodic()  (rarely needed)
    │
-   ├─ robot ENABLED ───────────► start()  (once)  ─► periodic()  (~every 20 ms)
+   ├─ robot ENABLED ───────────► start()  (once)  ─► periodic()  (every 5 ms - see PERIOD_SECONDS)
    │
    └─ disabled OR another mode picked ─► end()  ─► close()   (object thrown away)
 
@@ -95,6 +95,10 @@ A `Trigger` (a button binding) is automatically **scoped to wherever you create 
   active. Use this only for things like the brake-while-disabled binding.
 
 **Rule of thumb:** per-mode bindings go in the OpMode; always-on bindings go in `Robot`.
+
+**The trap:** a *default command* is not a binding and is **not** scoped. `setDefaultCommand` sets
+it on the shared mechanism, so one set in an OpMode keeps running in the next one. If an OpMode
+sets a default command, put it back in `close()` — see `TeleopOpMode`.
 
 ## Where things go
 

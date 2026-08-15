@@ -21,6 +21,7 @@ import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.framework.OpModeRobot;
+import org.wpilib.system.RobotController;
 
 /**
  * Owns the robot's shared hardware. There is no {@code RobotContainer}: subsystems live here as
@@ -89,17 +90,27 @@ public class Robot extends OpModeRobot {
     SimStartup.arm();
   }
 
+  // Last loop's timings, in microseconds. Pass zeros instead and LoggedRobot/FullCycleMS silently
+  // measures only the logger's own time.
+  private long userTimeMicros = 0;
+  private long beforeTimeMicros = 0;
+
   @Override
   public void robotPeriodic() {
     // AdvantageKit: flush the previous logging cycle, start this one.
-    Logger.AdvancedHooks.invokePeriodicAfterUser(0, 0);
+    Logger.AdvancedHooks.invokePeriodicAfterUser(userTimeMicros, beforeTimeMicros);
+    long beforeStart = RobotController.getMonotonicTime();
     Logger.AdvancedHooks.invokePeriodicBeforeUser();
+    long userStart = RobotController.getMonotonicTime();
 
     // Read every motor once, before any command looks at one. ORDER MATTERS: this is what makes
     // replay feed logged values in place of CAN.
     LoggedHardware.refreshAll();
 
     Scheduler.getDefault().run();
+
+    beforeTimeMicros = userStart - beforeStart;
+    userTimeMicros = RobotController.getMonotonicTime() - userStart;
   }
 
   // ---------------------------------------------------------------------------

@@ -1,8 +1,15 @@
 // WPILib 2027 is in ALPHA - pinned to alpha-6 on purpose. The OpMode/Commands-v3 APIs are still
 // moving; do NOT bump this casually. Known-volatile APIs to re-check when updating:
 //   - org.wpilib.opmode "Test" mode was renamed to @Utility (done, in use here)
-//   - UserControls / @UserControlsInstance was REMOVED upstream - do not adopt it (we don't)
+//   - UserControls / @UserControlsInstance exist in alpha-6 but were deleted on main by #8973
+//     (2026-06-11). Do not adopt it. BLOCKS THE BUMP: our vendored OpModeRobot.java uses it 9 times
+//   - Alert moved org.wpilib.driverstation -> org.wpilib.util on main; OpModeRobot.java imports it
+//   - OpMode(Robot) constructor injection is UNCHANGED on main - our OpMode shape is safe to keep
 //   - the command-based authoring shape (CommandOpMode/CommandRobot) is still an open proposal
+//   - allwpilib#9271: RobotState.isTeleop/isAutonomous/getRobotMode return UNKNOWN/false until
+//     startCompetition() - never check robot mode in a constructor. Also adds teleop/auto/utility
+//     binding scopes, which OpMode scope wins over, so our bindings are unaffected.
+// Run tools/upstream_drift.sh before bumping: it diffs src/main/java/org/wpilib/** vs upstream.
 // See ONBOARDING.md for the OpMode wiring model.
 plugins {
     id "java"
@@ -44,8 +51,8 @@ deploy {
                 wpilibStaticFileDeploy(getArtifactTypeClass('FileTreeArtifact')) {
                     files = project.fileTree('src/main/deploy')
                     directory = '/home/systemcore/deploy'
-                    deleteOldFiles = true  // Change to true to delete files on systemcore that no
-                                           // longer exist in deploy directory of this project
+                    // Upstream ships false. True so last season's deploy files don't linger.
+                    deleteOldFiles = true
                 }
             }
         }
@@ -57,9 +64,6 @@ def deployArtifact = deploy.targets.systemcore.artifacts.wpilibJava
 // Set to true to use debug for all targets including JNI, which will drastically impact
 // performance.
 wpi.java.debugJni = false
-
-// Set this to true to enable desktop support.
-def includeDesktopSupport = true
 
 // Defining my dependencies. In this case, WPILib (+ friends), and vendor libraries.
 // Also defines JUnit 5.
@@ -148,6 +152,9 @@ tasks.withType(org.wpilib.gradlerio.simulation.JavaSimulationTask).configureEach
         classpath = files(sourceSets.main.output) + classpath
         mainClass = ROBOT_MAIN_CLASS
     }
+    // GradleRIO deploys SystemCore with ZGC. Match it, or sim tails measure G1 and mispredict the
+    // robot: 3.8 ms worst-case loop vs 1.8 ms at 250 Hz.
+    jvmArgs '-XX:+UseZGC'
     // -Pjfr on any sim/replay run: record a Java Flight Recorder profile to build/replay.jfr
     if (project.hasProperty('jfr')) {
         jvmArgs "-XX:StartFlightRecording=settings=profile,filename=${buildDir}/replay.jfr,dumponexit=true",

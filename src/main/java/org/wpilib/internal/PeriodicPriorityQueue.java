@@ -23,10 +23,6 @@ import org.wpilib.util.WPIUtilJNI;
 public class PeriodicPriorityQueue {
   private boolean m_useTiming = true;
 
-  static {
-    System.err.println("[PATCHED-PPQ] loaded");
-  }
-
   /**
    * Sets whether to wait for each cycle's scheduled time, or run cycles back-to-back as fast as
    * possible. Free-running is for log replay, where the log sets the pace.

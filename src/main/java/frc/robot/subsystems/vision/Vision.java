@@ -5,7 +5,6 @@
 package frc.robot.subsystems.vision;
 
 import com.limelightvision.Limelight.PoseEstimateConfig;
-import frc.robot.Robot;
 import frc.robot.hardware.LoggedLimelight;
 import frc.robot.hardware.LoggedLimelight.Estimate;
 import frc.robot.subsystems.DriveMechanism;
@@ -48,10 +47,6 @@ public class Vision {
   private static final double MAX_TAG_DISTANCE_METERS = 4.0;
   private static final double MAX_SPIN_RAD_PER_SEC = 2 * Math.PI;
 
-  // Send the heading at 50 Hz however fast the robot loop runs. Rounds to 1 on a 50 Hz loop.
-  private static final int HEADING_BROADCAST_DIVIDER =
-      Math.max(1, (int) Math.round(0.02 / Robot.PERIOD_SECONDS));
-
   private static final PoseEstimateConfig PERMISSIVE_MT1 =
       PoseEstimateConfig.defaultMT1().withMinTagCount(1).withMaxAvgTagDistance(Double.MAX_VALUE);
   private static final PoseEstimateConfig PERMISSIVE_MT2 =
@@ -71,26 +66,14 @@ public class Vision {
   /** Wires every camera: relax the library's gates and run each camera's update every loop. */
   public static void registerAll(DriveMechanism drivetrain, LoggedLimelight... cameras) {
     // MegaTag2 needs to know which way we're facing, so send every camera our heading (degrees,
-    // CCW+). One call covers all of them - see setUseSharedOrientation below.
-    //
-    // ORDER MATTERS: these run in the order registered, so send the heading BEFORE reading the
-    // cameras. Held to 50 Hz by the divider: this call ends in a full NetworkTables flush, which is
-    // far too expensive to do every loop, and a camera solving at 30 fps cannot use it any faster.
+    // CCW+). One call covers all of them - see setUseSharedOrientation below. Every loop: the
+    // camera solves against the newest heading it has, so a stale one becomes position error.
     Scheduler.getDefault()
         .addPeriodic(
-            new Runnable() {
-              private int loop = 0;
-
-              @Override
-              public void run() {
-                if (loop++ % HEADING_BROADCAST_DIVIDER != 0) {
-                  return;
-                }
+            () ->
                 LoggedLimelight.setSharedRobotOrientation(
                     drivetrain.getPose().getRotation().getDegrees(),
-                    Math.toDegrees(drivetrain.getFieldVelocity().omega));
-              }
-            });
+                    Math.toDegrees(drivetrain.getFieldVelocity().omega)));
 
     for (LoggedLimelight camera : cameras) {
       // heading comes from the shared feed above
@@ -102,10 +85,9 @@ public class Vision {
 
   /** Runs one vision update: every new camera frame becomes at most one pose measurement. */
   private void update() {
-    // Always, even if nothing is used from it - the log has one entry per loop either way.
-    camera.refresh();
+    // The camera was already read this loop by LoggedHardware.refreshAll, before any command ran.
 
-    // A fast spin smears the image and staleness the heading we sent, so throw the frame away.
+    // A fast spin smears the image and stales the heading we sent, so throw the frame away.
     // This drops MegaTag1 too, which costs us a gyro-free heading exactly when the gyro is working
     // hardest - move the check into accept()'s MegaTag2 branch if you would rather keep it.
     boolean spinningTooFast = Math.abs(drivetrain.getFieldVelocity().omega) > MAX_SPIN_RAD_PER_SEC;

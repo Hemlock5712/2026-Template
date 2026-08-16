@@ -259,9 +259,10 @@ tasks.register('checkReplaySafety') {
         // in. Robot.java is the exception: it is what turns replay on.
         tree.matching { exclude 'Robot.java' }.each { f ->
             f.eachLine { line, n ->
-                if (line.trim().startsWith('//') || line.trim().startsWith('*')) return
-                if (line.contains('RunMode.REPLAY')) {
-                    offenders << "  ${f.name}:${n}   RunMode.REPLAY outside frc/robot/hardware"
+                if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.trim().startsWith('/*')) return
+                // Every spelling: the enum constant, the isReplay() helper, and a method reference.
+                if (line.contains('RunMode.REPLAY') || line =~ /RunMode(\.|::)isReplay/) {
+                    offenders << "  ${f.name}:${n}   replay check outside frc/robot/hardware"
                 }
             }
         }
@@ -271,7 +272,7 @@ tasks.register('checkReplaySafety') {
             f.eachLine { line, n ->
                 if (line.trim().startsWith('//')) return
                 if (line.contains('Utils.getCurrentTimeSeconds')) {
-                    offenders << "  ${f.name}:${n}   Utils.getCurrentTimeSeconds() - use RobotController.getTimestamp()"
+                    offenders << "  ${f.name}:${n}   Utils.getCurrentTimeSeconds() - use RobotController.getTime()"
                 }
             }
         }

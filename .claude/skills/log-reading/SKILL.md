@@ -27,7 +27,7 @@ Two traps about *when* values land in the `.wpilog`:
   values forward (zero-order hold) before integrating, or an energy figure comes out ~20x wrong.
 
 The 250 Hz odometry detail is *not* only in the `.hoot` — `Drivetrain/Sample*` below carries every
-odometry sample, about five per loop.
+odometry sample, about 1.25 per loop (250 Hz into a 200 Hz loop).
 
 ## Where logs live
 
@@ -71,18 +71,16 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
 | `/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples. **Input, no `/RealOutputs/` prefix** |
 | `/Drivetrain/TimestampSeconds` | `double` | When the module data above was sampled |
-| `/Drivetrain/SampleTimestamps` | `double[]` | Every odometry sample since last loop (~5 at 250 Hz) |
+| `/Drivetrain/SampleTimestamps` | `double[]` | Every odometry sample since last loop (~1-2 at 250 Hz into a 200 Hz loop) |
 | `/Drivetrain/SampleHeadings` | `struct:Rotation2d[]` | Gyro yaw at each of those samples |
 | `/Drivetrain/SamplePositions` | `struct:SwerveModulePosition[]` | Wheel positions at each sample, **flattened four per timestamp** |
 | `/RealOutputs/Drivetrain/TranslationSpeedMps` | `double` | `hypot(vx, vy)` |
-| `/RealOutputs/Drivetrain/RotationSpeedRadPerSec` | `double` | Yaw rate magnitude |
 | `/RealOutputs/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
 | `/RealOutputs/Drivetrain/OdometrySamplesPerLoop` | `int64` | How many samples the loop drained |
 | `/RealOutputs/Drivetrain/EstimatedPose` | `struct:Pose2d` | **Our** re-integrated pose. Unlike `Drivetrain/Pose` this recomputes in replay — graph it when a vision or estimator change is the point |
 | `/RealOutputs/Drivetrain/EstimatedPoseErrorMeters` | `double` | How far our estimate sits from CTRE's. Runs ≤ 9 mm in practice; a jump means the re-integration stopped matching |
 | `/RealOutputs/Drivetrain/Request` | `string` | The `SwerveRequest` subclass in force |
-| `/RealOutputs/Drivetrain/WantedVelocity` | `struct:ChassisVelocities` | What the command asked for, before the acceleration limiter |
-| `/RealOutputs/Drivetrain/CommandedVelocity` | `struct:ChassisVelocities` | What the limiter allowed. Graph the two together to see the limiter working |
+| `/RealOutputs/Drivetrain/CommandedVelocity` | `struct:ChassisVelocities` | The velocity the request asked for. Graph against `ModuleVelocities` to see what the drive actually did |
 | `/RealOutputs/Drivetrain/SkidRatio` | `double` | Instrumentation only — nothing acts on it. Read `SkidDetector`'s blind spots first |
 | `/RealOutputs/Arm/AngleDegrees` | `double` | Measured arm angle. **0° = straight out horizontally** (the `Arm_Cosine` frame), so the presets read: scoring ≈ 30°, **stow = 90°**, intake = 180°. Stow is not 0. |
 | `/RealOutputs/Arm/TargetDegrees` | `double` | Angle the arm is driving toward — graph against `AngleDegrees` |
@@ -117,13 +115,13 @@ Also present, logged by AdvantageKit itself (all verified in a real sim log):
 **Finding auto/teleop start:** `/DriverStation/Enabled` flips true at the start of the active mode;
 `/DriverStation/OpMode` tells you by name which OpMode was selected.
 
-**Vision keys:** `Hardware/Limelight/<name>/*` holds the whole frame, 51 keys per camera, in three
+**Vision keys:** `Hardware/Limelight/<name>/*` holds the whole frame, 49 keys per camera, in three
 groups of parallel arrays tied together by frame index:
 
 | Group | Entries per frame | Examples |
 | --- | --- | --- |
 | Frame | 1 | `TxDegrees`, `TargetDistanceMeters`, `CaptureLatencyMs`, `Imu*` (yaw/pitch/roll, gyro Z, accel XYZ) |
-| Estimate | 2 (MegaTag1, MegaTag2) | `Poses`, `TagCounts`, `TagSpanMeters`, `StdDevX/Y/Theta`, `RejectionFlags` |
+| Estimate | 2 — MegaTag1 then MegaTag2. No estimate-level index key: estimate `i` came from `FrameIndices[i / 2]` | `Poses`, `TagCounts`, `TagSpanMeters`, `StdDevX/Y/Theta`, `RejectionFlags` |
 | Tag | one per tag seen | `TagIds`, `TagAmbiguity`, `RobotPoseTargetSpace`, `TargetPoseRobotSpace`, `RobotPoseFieldSpaceMegaTag2` |
 
 All of it is an **input**, so a formula you write next season can use a value you never consumed this
@@ -139,7 +137,7 @@ LimelightLib's own NT tables (`/limelight-br/*`, `/limelight_telemetry/*`) are s
 nothing routes NT topics to the log — but you no longer need them: everything the library parses out
 of a frame is in the keys above.
 
-> **There is no vision simulation.** In sim `LoggedLimelight` reports nothing, so all 51 keys per
+> **There is no vision simulation.** In sim `LoggedLimelight` reports nothing, so all 49 keys per
 > camera are present but empty and `connected` is false. To exercise vision code, replay a log
 > recorded on the real robot.
 
@@ -227,7 +225,7 @@ voltage, supply/stator current, closed-loop error/reference, device temperature,
 - **"Wheels fighting the target?"** Overlay `Drivetrain/ModuleVelocities` vs `ModuleTargets` per module.
 - **"Brownout / CAN trouble?"** `/SystemStats/BatteryVoltage`, `/SystemStats/Faults/*`,
   `/SystemStats/Network/CAN0..4/*`. Real hardware only — these are all flat in sim.
-- **"Is the acceleration limiter cutting in?"** `Drivetrain/WantedVelocity` vs `CommandedVelocity`.
+- **"Are the wheels slipping?"** `Drivetrain/SkidRatio`, and `StatorCurrentAmps` against `kSlipCurrent`.
 - **"Did my one-line change move anything?"** Replay the log and diff `/RealOutputs/*` against
   `/ReplayOutputs/*` — see the `run-replay` skill.
 

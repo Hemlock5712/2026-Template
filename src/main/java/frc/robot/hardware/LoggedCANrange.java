@@ -52,12 +52,12 @@ public class LoggedCANrange implements LoggedHardware.Device {
     detected = device.getIsDetected();
     signalStrength = device.getSignalStrength();
 
-    LoggedHardware.register(this, logKey, bus);
+    LoggedHardware.register(this, logKey, bus, distance, distanceStdDev, detected, signalStrength);
   }
 
-  /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */
+  /** Applies a config, one attempt - Phoenix does not retry. Does nothing during replay. */
   public void configure(CANrangeConfiguration config) {
-    if (RunMode.current() == RunMode.REPLAY) {
+    if (RunMode.isReplay()) {
       return;
     }
     device.getConfigurator().apply(config);
@@ -91,11 +91,6 @@ public class LoggedCANrange implements LoggedHardware.Device {
   /** The raw CANrange, for simulation and anything this class does not wrap. Does NOT replay. */
   public CANrange device() {
     return device;
-  }
-
-  @Override
-  public BaseStatusSignal[] signals() {
-    return new BaseStatusSignal[] {distance, distanceStdDev, detected, signalStrength};
   }
 
   @Override

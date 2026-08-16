@@ -28,6 +28,11 @@ public enum RunMode {
     return CURRENT;
   }
 
+  /** True while replaying a log. Nothing may touch hardware - there is none. */
+  public static boolean isReplay() {
+    return CURRENT == REPLAY;
+  }
+
   /** Path of the log being replayed, or "" when not replaying. */
   public static String replayLog() {
     return REPLAY_LOG;

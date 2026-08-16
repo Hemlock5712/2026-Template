@@ -56,7 +56,7 @@ public class Robot extends OpModeRobot {
     // AdvantageKit logging: .wpilog file (./logs in sim, USB on the robot) plus live
     // NetworkTables for AdvantageScope. See the log-reading skill.
     Logger.recordMetadata("ProjectName", "2027-Template");
-    if (RunMode.current() == RunMode.REPLAY) {
+    if (RunMode.isReplay()) {
       // Inputs come from the old log; outputs go to a sibling "_replay" file to diff against it.
       Logger.setReplaySource(new WPILOGReader(RunMode.replayLog()));
       Logger.addDataReceiver(
@@ -70,8 +70,8 @@ public class Robot extends OpModeRobot {
     AutoLogOutputManager.addObject(this);
 
     // Replay reads one log entry per loop, so let the loop run as fast as the CPU allows instead
-    // of sleeping 20 ms of wall clock between cycles.
-    if (RunMode.current() == RunMode.REPLAY) {
+    // of sleeping 5 ms of wall clock between cycles.
+    if (RunMode.isReplay()) {
       setUseTiming(false);
     }
 
@@ -103,7 +103,7 @@ public class Robot extends OpModeRobot {
     Logger.AdvancedHooks.invokePeriodicBeforeUser();
     long userStart = RobotController.getMonotonicTime();
 
-    // Read every motor once, before any command looks at one. ORDER MATTERS: this is what makes
+    // Read every device once, before any command looks at one. ORDER MATTERS: this is what makes
     // replay feed logged values in place of CAN.
     LoggedHardware.refreshAll();
 

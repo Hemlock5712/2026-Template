@@ -79,13 +79,27 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     closedLoopError = device.getClosedLoopError();
     motionMagicAtTarget = device.getMotionMagicAtTarget();
 
-    LoggedHardware.register(this, logKey, bus);
+    LoggedHardware.register(
+        this,
+        logKey,
+        bus,
+        position,
+        rotorPosition,
+        velocity,
+        appliedVolts,
+        supplyCurrent,
+        statorCurrent,
+        torqueCurrent,
+        temperature,
+        closedLoopReference,
+        closedLoopError,
+        motionMagicAtTarget);
     BringUp.add(name, this);
   }
 
   /** Applies a config, retrying on CAN hiccups. Does nothing during replay. */
   public void configure(TalonFXConfiguration config) {
-    if (RunMode.current() == RunMode.REPLAY) {
+    if (RunMode.isReplay()) {
       return;
     }
     TalonFXUtil.applyConfigWithRetries(device, config);
@@ -94,7 +108,7 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   /** Commands the motor. Logged either way; only reaches hardware outside replay. */
   public void setControl(ControlRequest request) {
     Logger.recordOutput(logKey + "/Request", request.getName());
-    if (RunMode.current() == RunMode.REPLAY) {
+    if (RunMode.isReplay()) {
       return;
     }
     device.setControl(request);
@@ -165,23 +179,6 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   /** The raw TalonFX, for simulation and anything this class does not wrap. Does NOT replay. */
   public TalonFX device() {
     return device;
-  }
-
-  @Override
-  public BaseStatusSignal[] signals() {
-    return new BaseStatusSignal[] {
-      position,
-      rotorPosition,
-      velocity,
-      appliedVolts,
-      supplyCurrent,
-      statorCurrent,
-      torqueCurrent,
-      temperature,
-      closedLoopReference,
-      closedLoopError,
-      motionMagicAtTarget
-    };
   }
 
   @Override

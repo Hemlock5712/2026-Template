@@ -11,6 +11,7 @@ import com.limelightvision.Limelight.LimelightResults;
 import com.limelightvision.Limelight.PoseEstimate;
 import com.limelightvision.Limelight.PoseEstimateConfig;
 import com.limelightvision.Limelight.PoseEstimateType;
+import frc.robot.Robot;
 import frc.robot.utils.RunMode;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,9 @@ import org.littletonrobotics.junction.AutoLog;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.networktables.DoubleArrayPublisher;
+import org.wpilib.networktables.NetworkTableInstance;
+import org.wpilib.networktables.PubSubOption;
 
 /**
  * A Limelight whose whole frame goes through the log, so any vision decision can be replayed.
@@ -38,7 +42,7 @@ import org.wpilib.math.geometry.Pose3d;
  * <p>There is no vision simulation: in sim these keys are logged empty, so a sim log has the vision
  * plumbing but no sightings. Replay a real-robot log to exercise the vision code.
  */
-public class LoggedLimelight {
+public class LoggedLimelight implements LoggedHardware.Device {
   /** One camera's frames for a single loop. */
   @AutoLog
   public static class CameraInputs {
@@ -70,11 +74,10 @@ public class LoggedLimelight {
     public double[] imuAccelZG = new double[0];
 
     // ---- estimate level: two entries per frame (MegaTag1, then MegaTag2) ----
-    public long[] estimateFrameIndices = new long[0];
+    // The frame each pair came from is frameIndices[i / 2]; the type name follows from megaTag2.
     public Pose2d[] poses = new Pose2d[0];
     public double[] timestampsSeconds = new double[0];
     public double[] latencyMs = new double[0];
-    public String[] estimateTypes = new String[0];
     public int[] tagCounts = new int[0]; // tags actually on the field map
     public int[] reportedTagCounts = new int[0]; // tags the camera claims to see
     public double[] tagSpanMeters = new double[0];
@@ -110,7 +113,6 @@ public class LoggedLimelight {
       Pose2d pose,
       double timestampSeconds,
       double latencyMs,
-      String type,
       int tagCount,
       int reportedTagCount,
       double tagSpanMeters,
@@ -169,6 +171,8 @@ public class LoggedLimelight {
     this.camera = new Limelight(name);
     this.name = name;
     this.logKey = "Hardware/Limelight/" + name;
+    // No signals to batch: a Limelight talks over NetworkTables, not CAN.
+    LoggedHardware.register(this, logKey);
   }
 
   /** This camera's name, e.g. "limelight-br". */
@@ -176,17 +180,16 @@ public class LoggedLimelight {
     return name;
   }
 
-  /**
-   * Drains this loop's frames and hands them to the log. Must be called every loop, in the same
-   * order every loop - skipping a call would put replay out of step with the recording.
-   */
-  public void refresh() {
-    switch (RunMode.current()) {
-      case REAL -> readFromCamera();
-      // SIM reports nothing: no camera, no fake tag. The keys are still logged, just empty.
-      case REPLAY, SIM -> {} // in replay the log already holds what the camera said
-      default -> {}
+  @Override
+  public void updateInputs() {
+    // SIM reports nothing: no camera, no fake tag. The keys are still logged, just empty.
+    if (RunMode.current() == RunMode.REAL) {
+      readFromCamera();
     }
+  }
+
+  @Override
+  public void logInputs() {
     Logger.processInputs(logKey, inputs);
     unpack();
   }
@@ -291,7 +294,7 @@ public class LoggedLimelight {
 
   /** Applies the pose-estimate gates and points the camera at our shared heading feed. */
   public void configure(PoseEstimateConfig megaTag1, PoseEstimateConfig megaTag2) {
-    if (RunMode.current() != RunMode.REPLAY) {
+    if (!RunMode.isReplay()) {
       camera.withPoseEstimateConfig_MT1(megaTag1).withPoseEstimateConfig_MT2(megaTag2);
       camera.setUseSharedOrientation(true);
     }
@@ -304,28 +307,38 @@ public class LoggedLimelight {
    * with itself. {@code INTERNAL} is the independent one.
    */
   public void setIMUMode(IMUMode mode) {
-    if (RunMode.current() != RunMode.REPLAY) {
+    if (!RunMode.isReplay()) {
       camera.setIMUMode(mode);
     }
   }
 
   /** Tells the camera which tag to favour when several are in view. -1 clears it. */
   public void setPriorityTagID(int id) {
-    if (RunMode.current() != RunMode.REPLAY) {
+    if (!RunMode.isReplay()) {
       camera.setPriorityTagID(id);
     }
   }
 
+  // Published directly instead of through Limelight.setSharedRobotOrientation. That writes this
+  // same topic through the legacy entry API, which cannot set a send period - so the topic sits at
+  // NetworkTables' 100 ms default and the library flushes ALL of NetworkTables after every write to
+  // compensate. A period does the same job without touching every other topic.
+  // Table/key/array layout read out of limelightlib-java 2.0.0-beta2; recheck them on a bump.
+  private static final DoubleArrayPublisher SHARED_ORIENTATION =
+      NetworkTableInstance.getDefault()
+          .getTable("limelightshared")
+          .getDoubleArrayTopic("robot_orientation_set")
+          .publish(PubSubOption.periodic(Robot.PERIOD_SECONDS));
+
   /**
    * Sends our heading to every camera at once, which is what MegaTag2 needs to solve. Degrees,
-   * CCW+.
-   *
-   * <p>Ends in a full NetworkTables flush, so call it once per loop and never from the fast
-   * odometry thread.
+   * CCW+. Call it every loop: MegaTag2 pins its solve to the newest heading it has, so a stale one
+   * comes back as position error.
    */
   public static void setSharedRobotOrientation(double yawDegrees, double yawRateDegreesPerSecond) {
-    if (RunMode.current() != RunMode.REPLAY) {
-      Limelight.setSharedRobotOrientation(yawDegrees, yawRateDegreesPerSecond, 0, 0, 0, 0);
+    if (!RunMode.isReplay()) {
+      // [yaw, yawRate, pitch, pitchRate, roll, rollRate] - only yaw and its rate are used.
+      SHARED_ORIENTATION.set(new double[] {yawDegrees, yawRateDegreesPerSecond, 0, 0, 0, 0});
     }
   }
 
@@ -342,7 +355,6 @@ public class LoggedLimelight {
               inputs.poses[i],
               inputs.timestampsSeconds[i],
               inputs.latencyMs[i],
-              inputs.estimateTypes[i],
               inputs.tagCounts[i],
               inputs.reportedTagCounts[i],
               inputs.tagSpanMeters[i],
@@ -391,11 +403,10 @@ public class LoggedLimelight {
       LimelightResults frame = frames[f];
       storeFrame(f, frame);
 
-      // MegaTag1 and MegaTag2 solve the same frame; log both so replay can re-pick.
-      storeEstimate(
-          f * 2, frame.frameIndex, camera.getPoseEstimate(frame, PoseEstimateType.MT1_WPIBLUE));
-      storeEstimate(
-          f * 2 + 1, frame.frameIndex, camera.getPoseEstimate(frame, PoseEstimateType.MT2_WPIBLUE));
+      // MegaTag1 and MegaTag2 solve the same frame; log both so replay can re-pick. ORDER MATTERS:
+      // MT1 then MT2, which is what makes an estimate's frame frameIndices[i / 2].
+      storeEstimate(f * 2, camera.getPoseEstimate(frame, PoseEstimateType.MT1_WPIBLUE));
+      storeEstimate(f * 2 + 1, camera.getPoseEstimate(frame, PoseEstimateType.MT2_WPIBLUE));
 
       if (frame.fiducialTargets != null) {
         for (FiducialTarget target : frame.fiducialTargets) {
@@ -430,12 +441,10 @@ public class LoggedLimelight {
     }
   }
 
-  private void storeEstimate(int i, long frameIndex, PoseEstimate estimate) {
-    inputs.estimateFrameIndices[i] = frameIndex;
+  private void storeEstimate(int i, PoseEstimate estimate) {
     inputs.poses[i] = estimate.pose == null ? new Pose2d() : estimate.pose;
     inputs.timestampsSeconds[i] = estimate.timestampSeconds;
     inputs.latencyMs[i] = estimate.latencyMs;
-    inputs.estimateTypes[i] = estimate.type == null ? "" : estimate.type.name();
     inputs.tagCounts[i] = estimate.fieldedTagCount;
     inputs.reportedTagCounts[i] = estimate.reportedTagCount;
     inputs.tagSpanMeters[i] = estimate.tagSpanMeters;
@@ -470,8 +479,6 @@ public class LoggedLimelight {
   }
 
   private void allocate(int frames, int estimateCount, int tagCount) {
-    inputs.connected = false;
-
     inputs.frameIndices = new long[frames];
     inputs.frameTimestampsSeconds = new double[frames];
     inputs.txDegrees = new double[frames];
@@ -493,11 +500,9 @@ public class LoggedLimelight {
     inputs.imuAccelYG = new double[frames];
     inputs.imuAccelZG = new double[frames];
 
-    inputs.estimateFrameIndices = new long[estimateCount];
     inputs.poses = new Pose2d[estimateCount];
     inputs.timestampsSeconds = new double[estimateCount];
     inputs.latencyMs = new double[estimateCount];
-    inputs.estimateTypes = new String[estimateCount];
     inputs.tagCounts = new int[estimateCount];
     inputs.reportedTagCounts = new int[estimateCount];
     inputs.tagSpanMeters = new double[estimateCount];

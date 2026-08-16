@@ -15,35 +15,22 @@ public final class TalonFXUtil {
     throw new UnsupportedOperationException("This is a utility class!");
   }
 
-  /**
-   * Applies a config to a TalonFX, retrying on failure.
-   *
-   * @return true if the config applied, false if every retry failed
-   */
-  public static boolean applyConfigWithRetries(
-      TalonFX motor, TalonFXConfiguration config, int maxRetries) {
+  /** Applies a config to a TalonFX, retrying five times before giving up. */
+  public static void applyConfigWithRetries(TalonFX motor, TalonFXConfiguration config) {
     StatusCode status = StatusCode.OK;
-    for (int i = 0; i < maxRetries; i++) {
+    for (int i = 0; i < 5; i++) {
       status = motor.getConfigurator().apply(config);
       if (status.isOK()) {
-        return true;
+        return;
       }
     }
     // Report loudly so a misconfigured motor isn't silent.
     DriverStationErrors.reportError(
         "TalonFX "
             + motor.getDeviceID()
-            + " failed to configure after "
-            + maxRetries
-            + " attempts ("
+            + " failed to configure after 5 attempts ("
             + status
             + "). Check CAN wiring and device ID.",
         false);
-    return false;
-  }
-
-  /** Applies a config with the default retry count (5). */
-  public static boolean applyConfigWithRetries(TalonFX motor, TalonFXConfiguration config) {
-    return applyConfigWithRetries(motor, config, 5);
   }
 }

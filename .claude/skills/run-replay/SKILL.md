@@ -59,7 +59,7 @@ recomputation is seeing real data (~2 mm over a 20 s sim run). Scale the logged 
 2% and replay the same log: `ReplayOutputs/…EstimatedPose` walks away from `RealOutputs/…` while
 `Drivetrain/Pose` sits still.
 
-### 250 Hz samples in a 50 Hz loop
+### 250 Hz samples in a 200 Hz loop
 
 CTRE's odometry runs far faster than the robot loop, so reading it once per loop throws most of the
 data away. `registerTelemetry` hands us every sample on CTRE's own thread, where logging is illegal
@@ -69,7 +69,8 @@ So the callback does one cheap thing — copy the sample into a queue — and
 that queue in `updateInputs`, logging all of them as **inputs**:
 
 - `Drivetrain/SampleTimestamps`, `SampleHeadings`, `SamplePositions` (flattened, four per timestamp)
-- `Drivetrain/OdometrySamplesPerLoop` — how many arrived; 3-4 in sim, ~5 on a 250 Hz CAN FD bus
+- `Drivetrain/OdometrySamplesPerLoop` — how many arrived; ~1.25 on a 250 Hz CAN FD bus into the
+  200 Hz loop (measured mean 1.26 in sim, min 0, max 6)
 
 The estimator then integrates **every** sample in the main loop, which is what gets the error down
 to millimetres, and it all still replays because the samples came from the log. Costs ~7 KB/s of log.
@@ -116,8 +117,8 @@ wall clock, which is *meant* to differ when replay runs 33x faster.
 
 1. **Every device goes through a wrapper** in [frc/robot/hardware](../../src/main/java/frc/robot/hardware).
    Never `new TalonFX(...)` in a subsystem. `checkReplaySafety` fails the build if you do.
-2. **Only the wrapper knows about replay.** `RunMode.REPLAY` outside `frc/robot/hardware` fails the
-   build (`Robot.java` excepted — it is what turns replay on). A wrapper exposes the same methods the
+2. **Only the wrapper knows about replay.** `RunMode.REPLAY` or `RunMode.isReplay()` outside
+   `frc/robot/hardware` fails the build (`Robot.java` excepted — it is what turns replay on). A wrapper exposes the same methods the
    real device does and decides internally what to skip, so swapping `SwerveDrivetrain` for
    `LoggedSwerveDrivetrain` is the *only* change replay costs you: no mode checks leak into
    mechanisms, commands or OpModes. Sim **physics** is different — a plant that only exists in sim

@@ -44,7 +44,7 @@ public class LoggedCANcoder implements LoggedHardware.Device {
     absolutePosition = device.getAbsolutePosition();
     velocity = device.getVelocity();
 
-    LoggedHardware.register(this, logKey, bus);
+    LoggedHardware.register(this, logKey, bus, position, absolutePosition, velocity);
     BringUp.add(name, this);
   }
 
@@ -73,11 +73,6 @@ public class LoggedCANcoder implements LoggedHardware.Device {
    */
   public CANcoder device() {
     return device;
-  }
-
-  @Override
-  public BaseStatusSignal[] signals() {
-    return new BaseStatusSignal[] {position, absolutePosition, velocity};
   }
 
   @Override

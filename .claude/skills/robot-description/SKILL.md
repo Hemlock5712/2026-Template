@@ -127,13 +127,12 @@ The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `Appl
   (`robot.limelightBR` / `robot.limelightBL`).
 - [vision/Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) — feeds each
   camera's AprilTag pose estimates into the drivetrain's pose estimator (`addVisionMeasurement`).
-  The library filters bad estimates and computes distance/tag-count-scaled std devs per
-  `PoseEstimateConfig`; `Vision` picks MegaTag1 for 2+ tags, MegaTag2 for a lone tag (gyro
-  heading — seed the gyro). `Vision.registerAll(...)` in `Robot` wires the cameras. The robot
-  heading MegaTag2 needs is broadcast to all cameras at odometry rate (250 Hz) from
-  `DriveMechanism`'s telemetry callback via `Limelight.setSharedRobotOrientation` (the
-  `limelightshared` NT table). The library auto-publishes accepted/rejected pose telemetry under
-  `limelight_telemetry`.
+  EVERY trust decision lives in `Vision`, not the library — `PERMISSIVE_MT1/MT2` switch the
+  library's tunable gates off on purpose so the decision replays. `Vision` picks MegaTag1 for 2+
+  tags, MegaTag2 for a lone tag (gyro heading — seed the gyro). `Vision.registerAll(...)` in
+  `Robot` wires the cameras. The robot heading MegaTag2 needs is published to the `limelightshared`
+  NT table every loop (200 Hz) by `LoggedLimelight.setSharedRobotOrientation`. The library
+  auto-publishes accepted/rejected pose telemetry under `limelight_telemetry`.
 
 There is **no PhotonVision and no vision sim**, so AprilTag-based commands see no targets in
 simulation (see the `run-sim` skill).

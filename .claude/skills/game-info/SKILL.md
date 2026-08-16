@@ -68,10 +68,9 @@ Respect these as project conventions rather than re-deriving them:
   parked facing the tag has yaw **±180°** in tag space, not 0 — `DriveToTag` drives yaw to π.
   Camera firmware must be 2027.0+, and camera-side config (mount pitch/side signs, POI z-component)
   must be re-entered per the migration guide.
-- **Simulation has a fake camera.** `LoggedLimelight` invents one AprilTag on the field and reports
-  a noisy pose from the true one, so pose-estimate code runs in sim and can be replayed. It is a
-  stand-in, not a camera model: no lens, no field-of-view, no tag layout. Tag *geometry* still has
-  to be validated on hardware, and `DriveToTag` (target space) is not simulated at all.
+- **There is no vision simulation.** In sim `LoggedLimelight` reports nothing: the keys are logged
+  but empty, and `connected` is false. To exercise any vision code — pose estimates or `DriveToTag`
+  target space — replay a log recorded on the real robot.
 - **Vision trust lives in our code, not the library.** LimelightLib is configured permissively and
   only rejects structurally broken frames; the distance gate, tag-count gates and standard-deviation
   maths are in `Vision.java` so they can be re-tuned against a recorded match. See `run-replay`.

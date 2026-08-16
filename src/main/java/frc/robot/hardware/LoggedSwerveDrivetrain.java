@@ -4,13 +4,8 @@
 
 package frc.robot.hardware;
 
-import com.ctre.phoenix6.BaseStatusSignal;
 import com.ctre.phoenix6.swerve.SwerveRequest;
-import frc.robot.Robot;
-import frc.robot.generated.TunerConstants;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
-import frc.robot.utils.AccelerationLimiter;
-import frc.robot.utils.Motor;
 import frc.robot.utils.RunMode;
 import frc.robot.utils.SkidDetector;
 import java.util.ArrayList;
@@ -26,7 +21,6 @@ import org.wpilib.math.kinematics.SwerveModuleVelocity;
 import org.wpilib.math.linalg.Matrix;
 import org.wpilib.math.numbers.N1;
 import org.wpilib.math.numbers.N3;
-import org.wpilib.system.RobotController;
 
 /**
  * The swerve drivetrain as a single logged device: its whole state goes through the log, so
@@ -55,7 +49,7 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     // When the modules above were last sampled, in the WPILib timebase.
     public double timestampSeconds;
 
-    // Every odometry sample since the last loop - about five at 250 Hz - so code in the main loop
+    // Every odometry sample since the last loop - one or two at 250 Hz - so code in the main loop
     // sees all of them instead of only the newest. Positions are flattened: four per timestamp.
     public double[] sampleTimestamps = new double[0];
     public Rotation2d[] sampleHeadings = new Rotation2d[0];
@@ -74,25 +68,13 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
   // Built on the first loop, not in the constructor: no module data exists until the first refresh.
   private SwerveDrivePoseEstimator estimator;
 
-  // What we asked for last loop, FIELD-relative. The limiter ramps from this, not from the measured
-  // velocity, so the answer is the same on the robot and in replay. Field-relative because holding
-  // a
-  // steady field velocity while the robot spins is not acceleration, and must not be limited as if
-  // it were.
-  private ChassisVelocities lastCommanded = new ChassisVelocities();
-
-  private AccelerationLimiter.Config limiterConfig;
-
-  // When the limiter last advanced, so it moves with the clock rather than once per call.
-  private double lastLimitSeconds;
-
   public LoggedSwerveDrivetrain(CommandSwerveDrivetrain drivetrain) {
     this.drivetrain = drivetrain;
     // No signals to batch: CTRE reads the modules itself on its odometry thread.
     LoggedHardware.register(this, "Drivetrain");
 
     // Not in replay: the samples come from the log, and nothing would ever drain this queue.
-    if (RunMode.current() != RunMode.REPLAY) {
+    if (!RunMode.isReplay()) {
       // Runs on CTRE's odometry thread, holding its state lock. Copy and leave - CTRE warns that
       // slow work here degrades odometry, and AdvantageKit's logger is not thread-safe.
       drivetrain.registerTelemetry(
@@ -135,11 +117,6 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
   /** When the module data above was sampled, in the WPILib timebase. */
   public double getTimestampSeconds() {
     return inputs.timestampSeconds;
-  }
-
-  @Override
-  public BaseStatusSignal[] signals() {
-    return new BaseStatusSignal[0];
   }
 
   @Override
@@ -227,7 +204,7 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     if (estimator != null) {
       estimator.addVisionMeasurement(visionRobotPose, timestampSeconds, stdDevs);
     }
-    if (RunMode.current() != RunMode.REPLAY) {
+    if (!RunMode.isReplay()) {
       drivetrain.addVisionMeasurement(visionRobotPose, timestampSeconds, stdDevs);
     }
   }
@@ -237,95 +214,10 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
    * decided even though there is no drivetrain to send it to.
    */
   public void setControl(SwerveRequest request) {
-    // Everything is limited in the field frame, because that is the one that is not turning.
-    // Requests that speak robot-relative are rotated in and back out again.
-    Rotation2d heading = inputs.pose.getRotation();
-    boolean robotRelative = isRobotRelative(request);
-    ChassisVelocities wanted = commandedVelocity(request);
-    ChassisVelocities wantedField = robotRelative ? wanted.toFieldRelative(heading) : wanted;
-
-    // Real elapsed time, so a handover's second call in the same cycle does not advance the ramp
-    // twice. CAPPED at one period: dt cancels out of the ramp, so a stale clock - the first call
-    // after boot, where lastLimitSeconds is still 0 - would hand over the whole target at once.
-    double now = RobotController.getTime() / 1.0e6;
-    double dt = Math.min(now - lastLimitSeconds, Robot.PERIOD_SECONDS);
-    lastLimitSeconds = now;
-
-    ChassisVelocities nextField =
-        AccelerationLimiter.limit(lastCommanded, wantedField, heading, dt, limiterConfig());
-    // Command the average across the interval; carry its END as the ramp's state.
-    ChassisVelocities allowedField = AccelerationLimiter.midpoint(lastCommanded, nextField);
-    lastCommanded = nextField;
-
-    ChassisVelocities allowed =
-        robotRelative ? allowedField.toRobotRelative(heading) : allowedField;
-    writeVelocity(request, allowed);
-
     Logger.recordOutput("Drivetrain/Request", request.getClass().getSimpleName());
-    Logger.recordOutput("Drivetrain/WantedVelocity", wanted);
-    Logger.recordOutput("Drivetrain/CommandedVelocity", allowed);
-    if (RunMode.current() != RunMode.REPLAY) {
+    Logger.recordOutput("Drivetrain/CommandedVelocity", commandedVelocity(request));
+    if (!RunMode.isReplay()) {
       drivetrain.setControl(request);
-    }
-  }
-
-  /**
-   * True when the request's velocity is expressed in the robot's own frame rather than the field's.
-   */
-  private static boolean isRobotRelative(SwerveRequest request) {
-    return request instanceof SwerveRequest.ApplyRobotVelocity
-        || request instanceof SwerveRequest.RobotCentric;
-  }
-
-  /**
-   * Puts the limited velocity back into the request. Commands hold one request and re-fill it each
-   * loop - CTRE's own idiom - so mutating it here is safe.
-   */
-  private static void writeVelocity(SwerveRequest request, ChassisVelocities velocity) {
-    switch (request) {
-      case SwerveRequest.ApplyFieldVelocity r -> r.withVelocity(velocity);
-      case SwerveRequest.ApplyRobotVelocity r -> r.withVelocity(velocity);
-      case SwerveRequest.FieldCentric r ->
-          r.withVelocityX(velocity.vx)
-              .withVelocityY(velocity.vy)
-              .withRotationalRate(velocity.omega);
-      case SwerveRequest.RobotCentric r ->
-          r.withVelocityX(velocity.vx)
-              .withVelocityY(velocity.vy)
-              .withRotationalRate(velocity.omega);
-      default -> {} // Idle and friends command no velocity; nothing to limit
-    }
-  }
-
-  /**
-   * CG height is 0 on purpose, and 1.1 g is what the 2026 robot ran at with no CG term - one
-   * measured number rather than three guessed ones. Load transfer does not change a swerve's TOTAL
-   * grip anyway: every newton the front wheels lose, the rear ones gain, and all four drive.
-   *
-   * <p>TODO: weigh the robot, and re-measure the grip number on the real one. Put the CG height
-   * back when the robot exists - above about 0.23 m it starts tipping before it slips, and only the
-   * height term can see that coming.
-   */
-  private AccelerationLimiter.Config limiterConfig() {
-    if (limiterConfig == null) {
-      limiterConfig =
-          new AccelerationLimiter.Config(
-              drivetrain.getModuleLocations(),
-              60.0,
-              1.1,
-              0.0,
-              Motor.KRAKEN_X60_FOC,
-              TunerConstants.FrontLeft.DriveMotorGearRatio,
-              TunerConstants.FrontLeft.WheelRadius,
-              120.0);
-    }
-    return limiterConfig;
-  }
-
-  /** Keeps the driver's "forward" matched to the alliance colour. */
-  public void applyOperatorPerspective() {
-    if (RunMode.current() != RunMode.REPLAY) {
-      drivetrain.applyOperatorPerspective();
     }
   }
 
@@ -346,6 +238,13 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     };
   }
 
+  /** Keeps the driver's "forward" matched to the alliance colour. */
+  public void applyOperatorPerspective() {
+    if (!RunMode.isReplay()) {
+      drivetrain.applyOperatorPerspective();
+    }
+  }
+
   @Override
   public void logInputs() {
     Logger.processInputs("Drivetrain", inputs);
@@ -355,7 +254,6 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     // changing the maths here changes what a replay reports.
     Logger.recordOutput(
         "Drivetrain/TranslationSpeedMps", Math.hypot(inputs.velocity.vx, inputs.velocity.vy));
-    Logger.recordOutput("Drivetrain/RotationSpeedRadPerSec", inputs.velocity.omega);
     Logger.recordOutput("Drivetrain/OdometrySamplesPerLoop", inputs.sampleTimestamps.length);
     // Instrumentation only - nothing acts on it yet. Read SkidDetector's blind spots first.
     Logger.recordOutput(

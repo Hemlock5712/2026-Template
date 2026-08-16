@@ -139,7 +139,7 @@ def ratio_report(series, name):
 def zero_and_gravity(series, name):
     """Magnet offset, and kG for whichever gravity type the holding voltages actually fit."""
     angle = f"/Hardware/CANcoder/{name}/PositionRot"
-    volts = f"/Hardware/TalonFX/{name}/AppliedVolts"
+    volts = f"/Hardware/TalonFX/{name}/MotorVoltage"
     speed = f"/Hardware/TalonFX/{name}/VelocityRps"
 
     absolute = last(series, f"/Hardware/CANcoder/{name}/AbsolutePositionRot")
@@ -230,7 +230,7 @@ def open_loop_report(grid, volts, speed):
 
 def velocity_report(series, name):
     """Direction and kV, for a motor run under closed-loop velocity."""
-    volts = f"/Hardware/TalonFX/{name}/AppliedVolts"
+    volts = f"/Hardware/TalonFX/{name}/MotorVoltage"
     speed = f"/Hardware/TalonFX/{name}/VelocityRps"
     reference = f"/Hardware/TalonFX/{name}/ClosedLoopReference"
 
@@ -320,7 +320,7 @@ def main():
             f"{BRINGUP}{name}/SensorTravelRot",
             f"/Hardware/CANcoder/{name}/PositionRot",
             f"/Hardware/CANcoder/{name}/AbsolutePositionRot",
-            f"/Hardware/TalonFX/{name}/AppliedVolts",
+            f"/Hardware/TalonFX/{name}/MotorVoltage",
             f"/Hardware/TalonFX/{name}/VelocityRps",
             f"/Hardware/TalonFX/{name}/ClosedLoopReference",
             f"{REQUEST}{name}/Request",

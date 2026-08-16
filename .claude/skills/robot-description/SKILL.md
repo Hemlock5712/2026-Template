@@ -7,10 +7,9 @@ description: High-level map of this FRC robot template — the OpMode/Commands-v
 
 This is a Java FRC robot **template** on the **WPILib 2027 alpha** stack (`org.wpilib.*`
 packages, GradleRIO `2027.0.0-alpha-6`, Java **25**). It is the 2026→2027 migration target:
-**Commands v3 + the OpMode framework**, CTRE Phoenix 6 swerve, and **AdvantageKit logging-only**
-telemetry (`WPILOGWriter` + `NT4Publisher`, wired in
-[Robot.java](src/main/java/frc/robot/Robot.java) — no IO layer and
-**no log-replay**). `DataLogManager` is *not* used.
+**Commands v3 + the OpMode framework**, CTRE Phoenix 6 swerve, and **AdvantageKit** telemetry
+(`WPILOGWriter` + `NT4Publisher`, wired in [Robot.java](src/main/java/frc/robot/Robot.java)). No IO
+layer — devices are wrapped instead (see § Logging). `DataLogManager` is *not* used.
 
 > All file links below are relative to the **repo root**, not to this skill's directory.
 
@@ -46,9 +45,8 @@ switching away **tears it down** (its bindings are scoped to it and removed auto
 | always-on bindings | created in the **`Robot` constructor** (global scope) |
 
 **Binding scope is the one subtle rule:** a `Trigger` created inside an OpMode constructor is scoped
-to that OpMode (auto-removed on exit); one created in the `Robot` constructor is global. The
-brake-while-disabled binding in [Robot.java](src/main/java/frc/robot/Robot.java)
-(`RobotModeTriggers.disabled().whileTrue(...)`) is global on purpose.
+to that OpMode (auto-removed on exit); one created in the `Robot` constructor is global. There are
+no global bindings today — [Robot.java](src/main/java/frc/robot/Robot.java) marks the spot for them.
 
 "My OpMode doesn't show up on the DS" is a **runtime** discovery failure, not a compile error — the
 class must be `public`, non-`abstract`, annotated with a `name`, in `frc.robot.*`, with a public
@@ -59,12 +57,13 @@ constructor taking `(Robot robot)` (or no args). Selecting a mode prints
 
 | File | Annotation | What it does |
 | --- | --- | --- |
-| [TeleopOpMode.java](src/main/java/frc/robot/opmodes/TeleopOpMode.java) | `@Teleop("Teleop")` | Driver experience. Xbox controller on port 0; field-centric swerve as the drivetrain default command. **LB** = reset field-centric heading; **LT** = `intake()`, **RB** = `score()`, **RT** = `stow()` (superstructure presets, `whileTrue`); **A** = `DriveToTag` align (camera `robot.limelightBR`); **Y** = `autoScore()` (arm to scoring pose + flywheel spin-up; releasing **Y** stops the flywheel). |
+| [TeleopOpMode.java](src/main/java/frc/robot/opmodes/TeleopOpMode.java) | `@Teleop("Teleop")` | Driver experience. Xbox controller on port 0; field-centric swerve as the drivetrain default command. **LT** = `intake()`, **RB** = `score()`, **RT** = `stow()` (superstructure presets, `whileTrue`); **A** = `DriveToTag` align (camera `robot.limelightBR`); **Y** = `autoScore()` (arm to scoring pose + flywheel spin-up; releasing **Y** stops the flywheel). |
 | [StateMachineTeleop.java](src/main/java/frc/robot/opmodes/StateMachineTeleop.java) | `@Teleop("State Machine (no driving)")` | The superstructure as a Commands-v3 `StateMachine`: named states (stowed/pickup/prep/scoring), `when(...)` / `whenComplete()` transitions, enter/exit hooks. No drive controls — a superstructure showcase. |
 | [DriveDistanceOpMode.java](src/main/java/frc/robot/opmodes/DriveDistanceOpMode.java) | `@Autonomous("1 - Drive 2 Meters")` | The simplest auto and the first closed loop: one [DriveDistance](src/main/java/frc/robot/commands/DriveDistance.java) with a `.withTimeout(...)` seatbelt. No field frame, no alliance, no profile. |
 | [AutonomousOpMode.java](src/main/java/frc/robot/opmodes/AutonomousOpMode.java) | `@Autonomous("2 - Drive To Pose")` | Sequences two `DriveToPose` legs with `Command.sequence(...).named(...)`. The sequential group inherits its children's requirement (the drivetrain), and the scheduler hands the drivetrain off between legs. `start()` schedules the routine; `end()` cancels it. |
 | [DriveStowDriveOpMode.java](src/main/java/frc/robot/opmodes/DriveStowDriveOpMode.java) | `@Autonomous("3 - Drive Stow Drive")` | **The reference for multi-mechanism autos** — chaining: `sequence` + `.until(arm::atVertical)` (give a hold a finish line) + `Command.race(step, hold)` (do a step while holding a pose). This style is the team's teaching ceiling. |
 | [UtilityOpMode.java](src/main/java/frc/robot/opmodes/UtilityOpMode.java) | `@Utility("Stow")` | Safe off-field pose (arm vertical, flywheel stopped). `@Utility` is the renamed 2027 "Test" mode. |
+| [BringUpOpMode.java](src/main/java/frc/robot/opmodes/BringUpOpMode.java) | `@Utility("Bring-Up")` | **Moves the mechanisms.** Sweeps the arm through its three presets with a 2.5 s dwell each while the flywheel holds speed, so one run yields gear ratio, magnet offset and kG/kV. See the `device-bringup` skill. |
 
 Add a routine = add another annotated class. `start()` schedules the command, `end()` cancels it.
 
@@ -90,15 +89,24 @@ and the "which composition tool when" table live in `ONBOARDING.md` § "Holds ne
   alliance perspective (blue 0°, red 180°). It is **not** a `Mechanism` (already a class).
 - [DriveMechanism.java](src/main/java/frc/robot/subsystems/DriveMechanism.java) — the Commands-v3
   `Mechanism` wrapper that *owns* a `CommandSwerveDrivetrain`. Exposes `applyRequest(Supplier<SwerveRequest>)`,
-  `setControl(SwerveRequest)`, `addVisionMeasurement(...)`, and read getters `getPose()` /
-  `getFieldVelocity()` (both **blue-alliance-origin**, the Phoenix convention). There is
-  deliberately **no `seedFieldCentric()`** — re-zeroing the heading rewrites the pose estimator's
+  `setControl(SwerveRequest)`, `addVisionMeasurement(...)`, `resetPose(Pose2d)` (an auto's starting
+  waypoint — PathPlanner's `AutoBuilder` needs it; prefer vision when tags are visible), and read getters `getPose()` /
+  `getFieldVelocity()` (both **blue-alliance-origin**, the Phoenix convention). `getPose()` is
+  **our** `SwerveDrivePoseEstimator`, re-integrated from the logged samples, not CTRE's native
+  answer — that is what makes a vision-trust change move the *replayed* robot and not just a graph.
+  There is
+  deliberately **no `seedFieldCentric()` on `DriveMechanism`** (the wrapper below has it) — re-zeroing the heading rewrites the pose estimator's
   rotation, which is the same heading MegaTag2 solves against, so one press silently corrupts every
   later vision fix. Registers
   `applyOperatorPerspective` on the scheduler and wraps the drivetrain in
   [LoggedSwerveDrivetrain](src/main/java/frc/robot/hardware/LoggedSwerveDrivetrain.java), which
-  routes the whole `SwerveDriveState` through the log. `getPose()` / `getFieldVelocity()` read from
-  there, not from the live drivetrain. This is the **logging surface** — see `log-reading`.
+  routes the whole `SwerveDriveState` through the log. Both getters read from there, not from the
+  live drivetrain. This is the **logging surface** — see `log-reading`.
+- `LoggedSwerveDrivetrain` mirrors **CTRE's whole `SwerveDrivetrain` API** on purpose, so anything a
+  command might need is already replay-correct — you add it to `DriveMechanism`, not to the wrapper.
+  Five methods are deliberately absent (`getState`/`getStateCopy`, `getModule`/`getModules`/
+  `getPigeon2`, `registerTelemetry`, `updateSimState`, `optimizeBusUtilization`); the class javadoc
+  says why for each.
 
 The drivetrain uses CTRE's `SwerveRequest` types directly (`FieldCentric`, `ApplyFieldVelocity`,
 `ApplyRobotVelocity`, `Idle`). There is **no PathPlanner / Choreo / maple-sim** in this template.
@@ -168,7 +176,8 @@ for a real robot. Key values:
 
 ## Logging
 
-**AdvantageKit with replay** (this is the `advanced-replay` branch; plain `main` is logging-only).
+**AdvantageKit with replay** (this branch descends from `advanced-replay`; plain `main` is
+logging-only).
 [Robot.java](src/main/java/frc/robot/Robot.java) starts the `Logger` (`WPILOGWriter` +
 `NT4Publisher`) and ticks it in `robotPeriodic()` — this template extends `OpModeRobot`, not
 `LoggedRobot`, so the tick is manual via `Logger.AdvancedHooks`.
@@ -198,7 +207,7 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 - Vendordeps: [Phoenix6](vendordeps/Phoenix6-26.50.0-alpha-1.json) (`26.50.0-alpha-1`),
   [CommandsV3](vendordeps/CommandsV3.json) (`1.0.0`),
   [LimelightLib](vendordeps/LimelightLib.json) (`2.0.0-beta2`, Java-only), and
-  [AdvantageKit](vendordeps/AdvantageKit.json) (logging-only, no replay).
+  [AdvantageKit](vendordeps/AdvantageKit.json) (`27.0.0-alpha-4`).
   No PathPlanner/Choreo/maple-sim/PhotonVision.
 - Spotless (Google Java Format) runs on every `JavaCompile` (`dependsOn 'spotlessApply'`). Build/format
   from the WPILib VS Code extension or a Java-25 Gradle invocation.
@@ -217,6 +226,7 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 | Swerve constants / IDs / gains | [generated/TunerConstants.java](src/main/java/frc/robot/generated/TunerConstants.java) |
 | Logged device wrappers (replay) | [hardware/](src/main/java/frc/robot/hardware/) — `LoggedTalonFX`, `LoggedCANcoder`, `LoggedCANrange`, `LoggedLimelight`, `LoggedSwerveDrivetrain` |
 | Per-loop sensor read + log | [hardware/LoggedHardware.java](src/main/java/frc/robot/hardware/LoggedHardware.java) |
+| Bring-up measurements (ratio, offset, kG/kV) | [hardware/BringUp.java](src/main/java/frc/robot/hardware/BringUp.java) + [opmodes/BringUpOpMode.java](src/main/java/frc/robot/opmodes/BringUpOpMode.java) |
 | REAL / SIM / REPLAY mode | [utils/RunMode.java](src/main/java/frc/robot/utils/RunMode.java) |
 | Replay regression check | [ReplayCheck.java](src/test/java/frc/robot/ReplayCheck.java) (`./gradlew replayCheck`) |
 | Patched WPILib copies (delete once upstream) | `src/main/java/org/wpilib/` |

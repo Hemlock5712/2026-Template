@@ -176,7 +176,7 @@ public class LoggedLimelight implements LoggedHardware.Device {
   }
 
   /** This camera's name, e.g. "limelight-br". */
-  public String name() {
+  public String getName() {
     return name;
   }
 
@@ -258,9 +258,19 @@ public class LoggedLimelight implements LoggedHardware.Device {
     return newestFrame(inputs.targetDistanceMeters);
   }
 
-  /** Total latency - capture plus targeting - of the newest frame. */
-  public double getLatencyMs() {
-    return newestFrame(inputs.captureLatencyMs) + newestFrame(inputs.targetingLatencyMs);
+  /** Time the sensor spent exposing and reading out the newest frame. */
+  public double getCaptureLatencyMs() {
+    return newestFrame(inputs.captureLatencyMs);
+  }
+
+  /** Time the pipeline spent finding targets in the newest frame. */
+  public double getTargetingLatencyMs() {
+    return newestFrame(inputs.targetingLatencyMs);
+  }
+
+  /** Capture plus targeting - how old the newest frame's answer already is. */
+  public double getTotalLatencyMs() {
+    return getCaptureLatencyMs() + getTargetingLatencyMs();
   }
 
   /** The pipeline that produced the newest frame. */

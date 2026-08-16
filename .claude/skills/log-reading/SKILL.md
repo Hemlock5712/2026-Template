@@ -23,7 +23,7 @@ Two traps about *when* values land in the `.wpilog`:
 - The loop is **200 Hz** (`Robot.PERIOD_SECONDS = 0.005`), not WPILib's usual 50. Measured 199.5 Hz
   from `/Timestamp` in a real log. Anything that integrates must read timestamps, not assume 20 ms.
 - **AdvantageKit only writes a record when a value changes.** Nothing is evenly sampled:
-  `/Hardware/TalonFX/Arm/AppliedVolts` has 145 records against 2883 loops in the same log. Carry
+  `/Hardware/TalonFX/Arm/MotorVoltage` has 145 records against 2883 loops in the same log. Carry
   values forward (zero-order hold) before integrating, or an energy figure comes out ~20x wrong.
 
 The 250 Hz odometry detail is *not* only in the `.hoot` — `Drivetrain/Sample*` below carries every
@@ -63,7 +63,7 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 
 | Log key | Type | Meaning |
 | --- | --- | --- |
-| `/Drivetrain/Pose` | `struct:Pose2d` | CTRE's odometry pose (blue-alliance origin). An **input** — replay feeds it back, it does not recompute |
+| `/Drivetrain/Pose` | `struct:Pose2d` | CTRE's odometry pose (blue-alliance origin). An **input** — replay feeds it back, it does not recompute. **The code does not drive on this**; see `EstimatedPose` |
 | `/Drivetrain/Velocity` | `struct:ChassisVelocities` | Measured robot-relative chassis velocity |
 | `/Drivetrain/RawHeading` | `struct:Rotation2d` | Raw gyro yaw |
 | `/Drivetrain/ModuleVelocities` | `struct:SwerveModuleVelocity[]` | Per-module measured velocity + angle |
@@ -71,13 +71,17 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/Drivetrain/ModulePositions` | `struct:SwerveModulePosition[]` | Per-module distance + angle (estimator inputs) |
 | `/Drivetrain/OdometryPeriodSeconds` | `double` | Time between odometry samples. **Input, no `/RealOutputs/` prefix** |
 | `/Drivetrain/TimestampSeconds` | `double` | When the module data above was sampled |
+| `/Drivetrain/OdometryValid` | `boolean` | False when CTRE's odometry thread stopped keeping up — the pose is stale. Check this first when a pose looks frozen |
+| `/Drivetrain/OnCanFd` | `boolean` | True on a CANivore. False means odometry fell back to ~100 Hz |
+| `/Drivetrain/Rotation3d` | `struct:Rotation3d` | Full gyro orientation — pitch and roll as well as yaw. Nothing consumes it yet; it's there so a tip detector can be written against old logs |
+| `/Drivetrain/OperatorForwardDirection` | `struct:Rotation2d` | The driver's "forward": 0 on blue, π on red. Changes ~once a match |
 | `/Drivetrain/SampleTimestamps` | `double[]` | Every odometry sample since last loop (~1-2 at 250 Hz into a 200 Hz loop) |
 | `/Drivetrain/SampleHeadings` | `struct:Rotation2d[]` | Gyro yaw at each of those samples |
 | `/Drivetrain/SamplePositions` | `struct:SwerveModulePosition[]` | Wheel positions at each sample, **flattened four per timestamp** |
 | `/RealOutputs/Drivetrain/TranslationSpeedMps` | `double` | `hypot(vx, vy)` |
 | `/RealOutputs/Drivetrain/OdometryFrequencyHz` | `double` | `1 / OdometryPeriod` (≈250 Hz on CAN FD) |
 | `/RealOutputs/Drivetrain/OdometrySamplesPerLoop` | `int64` | How many samples the loop drained |
-| `/RealOutputs/Drivetrain/EstimatedPose` | `struct:Pose2d` | **Our** re-integrated pose. Unlike `Drivetrain/Pose` this recomputes in replay — graph it when a vision or estimator change is the point |
+| `/RealOutputs/Drivetrain/EstimatedPose` | `struct:Pose2d` | **Our** re-integrated pose — what `DriveMechanism.getPose()` returns, so this is the pose every command drives on. Unlike `Drivetrain/Pose` it recomputes in replay |
 | `/RealOutputs/Drivetrain/EstimatedPoseErrorMeters` | `double` | How far our estimate sits from CTRE's. Runs ≤ 9 mm in practice; a jump means the re-integration stopped matching |
 | `/RealOutputs/Drivetrain/Request` | `string` | The `SwerveRequest` subclass in force |
 | `/RealOutputs/Drivetrain/CommandedVelocity` | `struct:ChassisVelocities` | The velocity the request asked for. Graph against `ModuleVelocities` to see what the drive actually did |
@@ -102,8 +106,9 @@ Also present, logged by AdvantageKit itself (all verified in a real sim log):
 | `/SystemStats/*` | Systemcore health: `BatteryVoltage`, `CPU/*`, `Memory/*`, `IMU/*`, `Network/CAN0..4/*`, `Faults/*`. **Dead in sim** — 150 keys, one record each, almost all zero, and `BatteryVoltage` is a flat 12.0. Only meaningful on real hardware |
 | `/RealOutputs/Console` | Captured console output (`System.out` + errors) |
 | `/RealOutputs/Logger/*` | AdvantageKit's own timing diagnostics, ten sub-timers. Real and useful |
-| `/RealOutputs/LoggedRobot/FullCycleMS` | Whole-loop time. `LogPeriodicMS` next to it is byte-identical — same numbers, not a second measurement |
-| `/RealOutputs/LoggedRobot/UserCodeMS` | **Structurally zero.** `Robot.robotPeriodic` passes a literal `0, 0` to `invokePeriodicAfterUser`, so this never carries a real measurement |
+| `/RealOutputs/LoggedRobot/FullCycleMS` | Whole-loop time — `UserCodeMS` + `LogPeriodicMS`. Sim median ≈ 0.64 ms of the 5 ms budget |
+| `/RealOutputs/LoggedRobot/UserCodeMS` | `refreshAll` + the scheduler: our code. Sim median ≈ 0.41 ms. This is the one to watch |
+| `/RealOutputs/LoggedRobot/LogPeriodicMS` | AdvantageKit's own share. Sim median ≈ 0.22 ms |
 | `/RealMetadata/ProjectName` | Metadata recorded at startup |
 
 > **Want a new key in the log?** Call `Logger.recordOutput("MySubsystem/MyKey", value)` from the

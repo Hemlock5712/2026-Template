@@ -60,7 +60,7 @@ public class Vision {
   private Vision(LoggedLimelight camera, DriveMechanism drivetrain) {
     this.camera = camera;
     this.drivetrain = drivetrain;
-    this.logKey = "Vision/" + camera.name();
+    this.logKey = "Vision/" + camera.getName();
   }
 
   /** Wires every camera: relax the library's gates and run each camera's update every loop. */

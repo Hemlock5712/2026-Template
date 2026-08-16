@@ -48,11 +48,13 @@ Changing `kP` and replaying will do nothing. That is not a bug; the gain lives o
 
 The swerve has two poses, and the difference is the whole point:
 
-- **`Drivetrain/Pose`** — CTRE's, computed natively at 250 Hz. Logged as an **input**; replay copies it.
+- **`Drivetrain/Pose`** — CTRE's, computed natively at 250 Hz. Logged as an **input**; replay copies
+  it. Reference only — no command reads it.
 - **`Drivetrain/EstimatedPose`** — a WPILib `SwerveDrivePoseEstimator` inside
   [LoggedSwerveDrivetrain](../../src/main/java/frc/robot/hardware/LoggedSwerveDrivetrain.java), fed
   from the logged wheel positions, heading and vision measurements. An **output**: it recomputes, so
-  odometry and vision-trust changes move it.
+  odometry and vision-trust changes move it. **This is what `getPose()` returns**, which is why a
+  retuned trust number changes what the replayed robot does and not just a graph.
 
 `Drivetrain/EstimatedPoseErrorMeters` is the gap between them — the self-check that the
 recomputation is seeing real data (~2 mm over a 20 s sim run). Scale the logged wheel distances by

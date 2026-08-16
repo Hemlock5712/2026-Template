@@ -4,23 +4,33 @@
 
 package frc.robot.hardware;
 
+import static org.wpilib.units.Units.Hertz;
+
+import com.ctre.phoenix6.StatusCode;
+import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.ctre.phoenix6.swerve.SwerveRequest;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 import frc.robot.utils.RunMode;
 import frc.robot.utils.SkidDetector;
 import java.util.ArrayList;
+import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import org.littletonrobotics.junction.AutoLog;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.estimator.SwerveDrivePoseEstimator;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Rotation3d;
+import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
+import org.wpilib.math.kinematics.SwerveDriveKinematics;
 import org.wpilib.math.kinematics.SwerveModulePosition;
 import org.wpilib.math.kinematics.SwerveModuleVelocity;
 import org.wpilib.math.linalg.Matrix;
+import org.wpilib.math.linalg.VecBuilder;
 import org.wpilib.math.numbers.N1;
 import org.wpilib.math.numbers.N3;
+import org.wpilib.units.measure.Frequency;
 
 /**
  * The swerve drivetrain as a single logged device: its whole state goes through the log, so
@@ -28,12 +38,26 @@ import org.wpilib.math.numbers.N3;
  *
  * <p>The twelve swerve devices are not wrapped individually. CTRE runs them on its own 250 Hz
  * odometry thread inside the drivetrain, which this code cannot get between, so CTRE's odometry
- * *answer* ({@link #getPose}) is an input here rather than the sensors behind it. Every wheel
- * position and heading it integrated is logged too, which is what lets {@link #getEstimatedPose}
- * recompute a pose that does replay.
+ * *answer* is an input here rather than the sensors behind it. Every wheel position and heading it
+ * integrated is logged too, which is what lets {@link #getPose} re-integrate a pose that replays
+ * instead of handing back CTRE's frozen one.
  *
  * <p>This exposes the same methods the drivetrain does and handles replay internally, so nothing
- * downstream branches on {@code RunMode} - swapping the type in is the whole change.
+ * downstream branches on {@code RunMode} - swapping the type in is the whole change. Reads come
+ * from the log, writes are skipped in replay and mirrored onto our estimator where they move it.
+ *
+ * <p>Five of CTRE's methods are deliberately NOT forwarded, and adding them would undo the wrapper:
+ *
+ * <ul>
+ *   <li>{@code getState} / {@code getStateCopy} - live CTRE state, frozen in replay. Every field is
+ *       already a getter here, fed from the log.
+ *   <li>{@code getModule} / {@code getModules} / {@code getPigeon2} - hand out raw Phoenix devices,
+ *       which read the bus directly in replay. {@code checkReplaySafety} fails the build for this.
+ *   <li>{@code registerTelemetry} - we own the one callback; a second one would steal the samples.
+ *   <li>{@code updateSimState} - driven by {@link CommandSwerveDrivetrain}'s 4 ms sim notifier.
+ *   <li>{@code optimizeBusUtilization} - it drops unused signals to 0 Hz, undoing the 250 Hz rates
+ *       {@link LoggedHardware#initialize} just set. Bus config belongs there, not here.
+ * </ul>
  */
 public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
   /** The drivetrain's state for a single loop. */
@@ -48,6 +72,12 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     public double odometryPeriodSeconds;
     // When the modules above were last sampled, in the WPILib timebase.
     public double timestampSeconds;
+    // False when CTRE's odometry thread is not keeping up - a dropped or faulted sample.
+    public boolean odometryValid;
+    public boolean onCanFd;
+    // Full gyro orientation: pitch and roll as well as yaw, for tip detection.
+    public Rotation3d rotation3d = new Rotation3d();
+    public Rotation2d operatorForwardDirection = new Rotation2d();
 
     // Every odometry sample since the last loop - one or two at 250 Hz - so code in the main loop
     // sees all of them instead of only the newest. Positions are flattened: four per timestamp.
@@ -68,6 +98,15 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
   // Built on the first loop, not in the constructor: no module data exists until the first refresh.
   private SwerveDrivePoseEstimator estimator;
 
+  // WPILib takes both in the constructor, so changing either rebuilds the estimator. These are its
+  // defaults - state 0.1 m / 0.1 rad, vision 0.9 m / 0.9 rad.
+  private Matrix<N3, N1> stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
+  private Matrix<N3, N1> visionStdDevs = VecBuilder.fill(0.9, 0.9, 0.9);
+
+  // Set when the wheel encoders themselves are about to jump (tareEverything), so the estimator is
+  // rebuilt on NEXT loop's positions instead of integrating the discontinuity as real motion.
+  private Pose2d pendingResync;
+
   public LoggedSwerveDrivetrain(CommandSwerveDrivetrain drivetrain) {
     this.drivetrain = drivetrain;
     // No signals to batch: CTRE reads the modules itself on its odometry thread.
@@ -84,9 +123,14 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     }
   }
 
-  /** Field pose from odometry, blue-origin (the origin never flips with alliance). */
+  /**
+   * Field pose from odometry, blue-origin (the origin never flips with alliance). This is OUR
+   * estimator, re-integrated from the logged samples, not CTRE's - so it recomputes during replay
+   * and everything driving off it replays too. CTRE's own answer stays in the log as {@code
+   * Drivetrain/Pose}; falls back to it until the first loop has run.
+   */
   public Pose2d getPose() {
-    return inputs.pose;
+    return estimator == null ? inputs.pose : estimator.getEstimatedPosition();
   }
 
   /** Velocity in the robot frame. */
@@ -96,7 +140,7 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
 
   /** Velocity rotated into the field frame. */
   public ChassisVelocities getFieldVelocity() {
-    return inputs.velocity.toFieldRelative(inputs.pose.getRotation());
+    return inputs.velocity.toFieldRelative(getPose().getRotation());
   }
 
   /** Gyro heading before any pose reset or vision correction. */
@@ -119,6 +163,54 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     return inputs.timestampSeconds;
   }
 
+  /** Our estimate at an earlier timestamp, for latency compensation. Empty outside the buffer. */
+  public Optional<Pose2d> samplePoseAt(double timestampSeconds) {
+    return estimator == null ? Optional.empty() : estimator.sampleAt(timestampSeconds);
+  }
+
+  /** Full gyro orientation - pitch and roll as well as yaw. */
+  public Rotation3d getRotation3d() {
+    return inputs.rotation3d;
+  }
+
+  /** Which field direction the driver's "forward" points: blue 0 deg, red 180 deg. */
+  public Rotation2d getOperatorForwardDirection() {
+    return inputs.operatorForwardDirection;
+  }
+
+  /** False when CTRE's odometry thread stopped keeping up - the pose above is stale. */
+  public boolean isOdometryValid() {
+    return inputs.odometryValid;
+  }
+
+  /** True on a CANivore, which is what allows the 250 Hz odometry rate. */
+  public boolean isOnCANFD() {
+    return inputs.onCanFd;
+  }
+
+  /** Odometry samples per second: 250 on CAN FD, 100 on plain CAN. */
+  public double getOdometryFrequency() {
+    return inputs.odometryPeriodSeconds > 0 ? 1.0 / inputs.odometryPeriodSeconds : 0.0;
+  }
+
+  /** {@link #getOdometryFrequency} as a unit-typed measure. */
+  public Frequency getOdometryFrequencyMeasure() {
+    return Hertz.of(getOdometryFrequency());
+  }
+
+  /**
+   * Wheel layout, for turning module velocities into a chassis velocity. Built from {@code
+   * TunerConstants}, which is identical in replay, so it is safe to read off the drivetrain.
+   */
+  public SwerveDriveKinematics getKinematics() {
+    return drivetrain.getKinematics();
+  }
+
+  /** Where each module sits relative to the robot center. Constant, as {@link #getKinematics}. */
+  public Translation2d[] getModuleLocations() {
+    return drivetrain.getModuleLocations();
+  }
+
   @Override
   public void updateInputs() {
     // getStateCopy, not getState: getState hands back CTRE's one shared state object, whose module
@@ -132,6 +224,12 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
     inputs.modulePositions = state.ModulePositions;
     inputs.odometryPeriodSeconds = state.OdometryPeriod;
     inputs.timestampSeconds = state.Timestamp;
+
+    // Not carried in SwerveDriveState, so read straight off the drivetrain.
+    inputs.odometryValid = drivetrain.isOdometryValid();
+    inputs.onCanFd = drivetrain.isOnCANFD();
+    inputs.rotation3d = drivetrain.getRotation3d();
+    inputs.operatorForwardDirection = drivetrain.getOperatorForwardDirection();
 
     drainSamples(state.ModulePositions.length);
   }
@@ -169,9 +267,10 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
       return; // before the first refresh, or a partial odometry sample
     }
     if (estimator == null) {
-      estimator =
-          new SwerveDrivePoseEstimator(
-              drivetrain.getKinematics(), inputs.rawHeading, inputs.modulePositions, inputs.pose);
+      rebuildEstimator(inputs.pose);
+    } else if (pendingResync != null) {
+      rebuildEstimator(pendingResync);
+      pendingResync = null;
     }
 
     // Every sample, not just the newest, so this sees what CTRE's own odometry saw. A log recorded
@@ -187,17 +286,130 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
   }
 
   /**
-   * Our own pose estimate, re-integrated from the logged wheel positions. Unlike {@link #getPose}
-   * it recomputes during replay. Falls back to CTRE's until the first loop has run.
+   * Snaps the pose to a known starting point - an auto's first waypoint, or a bench test with no
+   * tags in sight. Both estimators, so {@code Drivetrain/Pose} stays a fair comparison.
+   *
+   * <p>This re-aims the heading MegaTag2 solves against, so a reset the robot doesn't actually
+   * match turns every later single-tag fix into that same error. Only call it when you know where
+   * it is. Before the first loop the estimator does not exist yet; it seeds itself from the reset
+   * pose.
    */
-  public Pose2d getEstimatedPose() {
-    return estimator == null ? inputs.pose : estimator.getEstimatedPosition();
+  public void resetPose(Pose2d pose) {
+    if (estimator != null) {
+      estimator.resetPose(pose);
+    }
+    if (!RunMode.isReplay()) {
+      drivetrain.resetPose(pose);
+    }
+  }
+
+  /** Moves the pose without touching the heading. Blue-origin, as {@link #resetPose}. */
+  public void resetTranslation(Translation2d translation) {
+    if (estimator != null) {
+      estimator.resetTranslation(translation);
+    }
+    if (!RunMode.isReplay()) {
+      drivetrain.resetTranslation(translation);
+    }
+  }
+
+  /** Turns the pose without moving it. Read {@link #resetPose}'s warning about MegaTag2 first. */
+  public void resetRotation(Rotation2d rotation) {
+    if (estimator != null) {
+      estimator.resetRotation(rotation);
+    }
+    if (!RunMode.isReplay()) {
+      drivetrain.resetRotation(rotation);
+    }
+  }
+
+  /**
+   * Makes the robot's current heading the driver's "forward". Same warning as {@link #resetPose}.
+   */
+  public void seedFieldCentric() {
+    seedFieldCentric(Rotation2d.kZero);
+  }
+
+  /** {@link #seedFieldCentric} with an offset: the robot ends up {@code rotation} off forward. */
+  public void seedFieldCentric(Rotation2d rotation) {
+    resetRotation(rotation.plus(getOperatorForwardDirection()));
+  }
+
+  /** Zeroes the wheel encoders and puts the robot at the origin. Bench use - never mid-match. */
+  public void tareEverything() {
+    if (!RunMode.isReplay()) {
+      drivetrain.tareEverything();
+    }
+    // The wheel positions jump next loop, so rebuild rather than integrate the jump as motion.
+    pendingResync = Pose2d.kZero;
+  }
+
+  /** Brake or coast on every drive motor. */
+  public StatusCode configNeutralMode(NeutralModeValue neutralMode) {
+    return RunMode.isReplay() ? StatusCode.OK : drivetrain.configNeutralMode(neutralMode);
+  }
+
+  /** {@link #configNeutralMode} with an explicit CAN timeout. */
+  public StatusCode configNeutralMode(NeutralModeValue neutralMode, double timeoutSeconds) {
+    return RunMode.isReplay()
+        ? StatusCode.OK
+        : drivetrain.configNeutralMode(neutralMode, timeoutSeconds);
+  }
+
+  /** Rotates the driver's "forward" for the alliance. Does not move the pose, which stays blue. */
+  public void setOperatorPerspectiveForward(Rotation2d fieldDirection) {
+    if (!RunMode.isReplay()) {
+      drivetrain.setOperatorPerspectiveForward(fieldDirection);
+    }
+  }
+
+  /** Default trust for vision fixes that don't carry their own. Applies to our estimator too. */
+  public void setVisionMeasurementStdDevs(Matrix<N3, N1> stdDevs) {
+    visionStdDevs = stdDevs;
+    if (estimator != null) {
+      estimator.setVisionMeasurementStdDevs(stdDevs);
+    }
+    if (!RunMode.isReplay()) {
+      drivetrain.setVisionMeasurementStdDevs(stdDevs);
+    }
+  }
+
+  /**
+   * How far to trust wheel odometry against vision. WPILib takes this in the constructor, so
+   * changing it after the first loop rebuilds our estimator and drops its sample history - call it
+   * at startup.
+   */
+  public void setStateStdDevs(Matrix<N3, N1> stdDevs) {
+    stateStdDevs = stdDevs;
+    if (estimator != null) {
+      rebuildEstimator(getPose());
+    }
+    if (!RunMode.isReplay()) {
+      drivetrain.setStateStdDevs(stdDevs);
+    }
+  }
+
+  /** A vision fix at the estimator's default trust - see {@link #setVisionMeasurementStdDevs}. */
+  public void addVisionMeasurement(Pose2d visionRobotPose, double timestampSeconds) {
+    addVisionMeasurement(visionRobotPose, timestampSeconds, visionStdDevs);
+  }
+
+  /** Seeds a fresh estimator at {@code pose} from the current wheel positions. */
+  private void rebuildEstimator(Pose2d pose) {
+    estimator =
+        new SwerveDrivePoseEstimator(
+            getKinematics(),
+            inputs.rawHeading,
+            inputs.modulePositions,
+            pose,
+            stateStdDevs,
+            visionStdDevs);
   }
 
   /**
    * Corrects the pose with a vision measurement. Our estimator is corrected even during replay - it
-   * is ours, so a changed trust number moves {@code Drivetrain/EstimatedPose}. CTRE's native
-   * estimator is not running then, so it is skipped.
+   * is ours, so a changed trust number moves the pose the robot drives on. CTRE's native estimator
+   * is not running then, so it is skipped.
    */
   public void addVisionMeasurement(
       Pose2d visionRobotPose, double timestampSeconds, Matrix<N3, N1> stdDevs) {
@@ -260,11 +472,11 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
         "Drivetrain/SkidRatio",
         SkidDetector.ratio(
             inputs.moduleVelocities, drivetrain.getModuleLocations(), inputs.velocity.omega));
-    Logger.recordOutput("Drivetrain/EstimatedPose", getEstimatedPose());
+    Logger.recordOutput("Drivetrain/EstimatedPose", getPose());
     // Near zero means the re-integration matches CTRE's - i.e. replay is seeing the real thing.
     Logger.recordOutput(
         "Drivetrain/EstimatedPoseErrorMeters",
-        getEstimatedPose().getTranslation().getDistance(inputs.pose.getTranslation()));
+        getPose().getTranslation().getDistance(inputs.pose.getTranslation()));
     Logger.recordOutput(
         "Drivetrain/OdometryFrequencyHz",
         inputs.odometryPeriodSeconds > 0 ? 1.0 / inputs.odometryPeriodSeconds : 0.0);

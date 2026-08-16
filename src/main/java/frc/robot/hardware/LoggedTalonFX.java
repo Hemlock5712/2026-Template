@@ -34,11 +34,11 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     public double positionRot;
     public double rotorPositionRot;
     public double velocityRps;
-    public double appliedVolts;
+    public double motorVoltage;
     public double supplyCurrentAmps;
     public double statorCurrentAmps;
     public double torqueCurrentAmps;
-    public double temperatureCelsius;
+    public double deviceTempCelsius;
     public double closedLoopReference;
     public double closedLoopError;
     public boolean motionMagicAtTarget;
@@ -51,11 +51,11 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   private final StatusSignal<?> position;
   private final StatusSignal<?> rotorPosition;
   private final StatusSignal<?> velocity;
-  private final StatusSignal<?> appliedVolts;
+  private final StatusSignal<?> motorVoltage;
   private final StatusSignal<?> supplyCurrent;
   private final StatusSignal<?> statorCurrent;
   private final StatusSignal<?> torqueCurrent;
-  private final StatusSignal<?> temperature;
+  private final StatusSignal<?> deviceTemp;
   private final StatusSignal<?> closedLoopReference;
   private final StatusSignal<?> closedLoopError;
   private final StatusSignal<?> motionMagicAtTarget;
@@ -70,11 +70,11 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     position = device.getPosition();
     rotorPosition = device.getRotorPosition();
     velocity = device.getVelocity();
-    appliedVolts = device.getMotorVoltage();
+    motorVoltage = device.getMotorVoltage();
     supplyCurrent = device.getSupplyCurrent();
     statorCurrent = device.getStatorCurrent();
     torqueCurrent = device.getTorqueCurrent();
-    temperature = device.getDeviceTemp();
+    deviceTemp = device.getDeviceTemp();
     closedLoopReference = device.getClosedLoopReference();
     closedLoopError = device.getClosedLoopError();
     motionMagicAtTarget = device.getMotionMagicAtTarget();
@@ -86,11 +86,11 @@ public class LoggedTalonFX implements LoggedHardware.Device {
         position,
         rotorPosition,
         velocity,
-        appliedVolts,
+        motorVoltage,
         supplyCurrent,
         statorCurrent,
         torqueCurrent,
-        temperature,
+        deviceTemp,
         closedLoopReference,
         closedLoopError,
         motionMagicAtTarget);
@@ -137,8 +137,8 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   }
 
   /** Volts the motor is applying right now. */
-  public double getAppliedVolts() {
-    return inputs.appliedVolts;
+  public double getMotorVoltage() {
+    return inputs.motorVoltage;
   }
 
   /** Current drawn from the battery, in amps. */
@@ -157,8 +157,8 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   }
 
   /** Motor temperature in Celsius. */
-  public double getTemperatureCelsius() {
-    return inputs.temperatureCelsius;
+  public double getDeviceTempCelsius() {
+    return inputs.deviceTempCelsius;
   }
 
   /** What the motor's closed loop is aiming at, in its control mode's units. */
@@ -185,15 +185,15 @@ public class LoggedTalonFX implements LoggedHardware.Device {
   public void updateInputs() {
     inputs.connected =
         BaseStatusSignal.isAllGood(
-            position, velocity, appliedVolts, closedLoopReference, closedLoopError);
+            position, velocity, motorVoltage, closedLoopReference, closedLoopError);
     inputs.positionRot = position.getValueAsDouble();
     inputs.rotorPositionRot = rotorPosition.getValueAsDouble();
     inputs.velocityRps = velocity.getValueAsDouble();
-    inputs.appliedVolts = appliedVolts.getValueAsDouble();
+    inputs.motorVoltage = motorVoltage.getValueAsDouble();
     inputs.supplyCurrentAmps = supplyCurrent.getValueAsDouble();
     inputs.statorCurrentAmps = statorCurrent.getValueAsDouble();
     inputs.torqueCurrentAmps = torqueCurrent.getValueAsDouble();
-    inputs.temperatureCelsius = temperature.getValueAsDouble();
+    inputs.deviceTempCelsius = deviceTemp.getValueAsDouble();
     inputs.closedLoopReference = closedLoopReference.getValueAsDouble();
     inputs.closedLoopError = closedLoopError.getValueAsDouble();
     inputs.motionMagicAtTarget = motionMagicAtTarget.getValue() == Boolean.TRUE;

@@ -19,6 +19,12 @@ import java.util.Map;
  * <p>On a robot this asks the CAN bus for every signal in a single round trip, then writes the
  * answers to the log. During replay it skips the bus and fills the same fields from the log, so
  * mechanism code cannot tell which run it is in.
+ *
+ * <p>NAMING: a wrapper's method is the vendor's method name plus a unit suffix where the unit is
+ * ambiguous - {@code getPosition} becomes {@code getPositionRot}, {@code getDeviceTemp} becomes
+ * {@code getDeviceTempCelsius}, {@code getMotorVoltage} stays as it is. Booleans take {@code is}
+ * ({@code getIsDetected} becomes {@code isDetected}). The point is that every name is findable in
+ * the vendor's docs. Anything invented here is a combination of vendor values and says so.
  */
 public final class LoggedHardware {
   private LoggedHardware() {}

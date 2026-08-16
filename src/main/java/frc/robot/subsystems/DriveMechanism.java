@@ -45,17 +45,23 @@ public class DriveMechanism extends Mechanism {
     drivetrain.setControl(request);
   }
 
-  /** The robot's field pose from odometry, blue-origin (the origin never flips with alliance). */
+  /**
+   * The robot's field pose, blue-origin (the origin never flips with alliance). Re-integrated from
+   * the logged wheel positions by our own estimator, so it recomputes during replay - retune vision
+   * trust, replay, and the robot really does drive differently. Logged as {@code
+   * Drivetrain/EstimatedPose}; CTRE's is {@code Drivetrain/Pose}.
+   */
   public Pose2d getPose() {
     return drivetrain.getPose();
   }
 
   /**
-   * Our own pose estimate, re-integrated from the logged wheel positions instead of by CTRE. Unlike
-   * {@link #getPose} it recomputes during replay.
+   * Snaps the pose to a known starting point, blue-origin - an auto's first waypoint. Vision is the
+   * better reset when tags are visible: this one is only as good as your claim about where the
+   * robot is, and a wrong heading here corrupts every later MegaTag2 fix.
    */
-  public Pose2d getEstimatedPose() {
-    return drivetrain.getEstimatedPose();
+  public void resetPose(Pose2d pose) {
+    drivetrain.resetPose(pose);
   }
 
   /** The robot's field-relative velocity from odometry (rotated out of the robot frame). */

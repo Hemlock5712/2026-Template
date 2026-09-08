@@ -34,6 +34,8 @@ public class DriveStowDriveOpMode extends PeriodicOpMode {
     final Pose2d pose1 = new Pose2d(2.0, 0.0, Rotation2d.kZero); // 2 m straight ahead
     final Pose2d pose2 = new Pose2d(2.0, 1.5, Rotation2d.fromDegrees(90)); // then 1.5 m left
 
+    //        Logger.recordOutput("Auto/Step", step);
+    // Logger.recordOutput("Auto/ArmStowedAtStepStart", robot.arm.atVertical());
     routine =
         Command.sequence(
                 // Leg 1: DriveToPose finishes on its own, so it can sit in a sequence as-is.

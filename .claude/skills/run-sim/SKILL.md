@@ -72,7 +72,7 @@ and [Robot.java](src/main/java/frc/robot/Robot.java):
 1. `build.gradle` passes the chosen mode to the sim JVM as the system property `frc.sim.startMode`,
    and skips `wpi.sim.addGui()` / `wpi.sim.addDriverstation()` when headless so nothing competes
    with the programmatic enable.
-2. `Robot.simulationInit()` calls `SimStartup.arm()` (simulation only).
+2. `Robot.simulationInit()` calls `SimStartup.autoEnable()` (simulation only).
 3. `SimStartup` looks up the OpMode the framework registered, then drives `DriverStationSim`:
    `setDsAttached(true)`, `setRobotMode(mode)`, `setOpMode(id)`, `setEnabled(true)`, `notifyNewData()`.
    (`setRobotMode` **and** `setOpMode` are both required — the opmode id the framework matches on

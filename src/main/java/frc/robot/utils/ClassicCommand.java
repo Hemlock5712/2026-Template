@@ -20,6 +20,9 @@ public abstract class ClassicCommand implements Command {
   private final String name;
   private final Set<Mechanism> requirements;
 
+  /** The running coroutine. Only valid inside initialize/execute/isFinished, null otherwise. */
+  protected Coroutine coroutine;
+
   /**
    * Creates a classic-style command.
    *
@@ -56,6 +59,7 @@ public abstract class ClassicCommand implements Command {
 
   @Override
   public final void run(Coroutine coroutine) {
+    this.coroutine = coroutine;
     initialize();
     while (true) {
       execute();

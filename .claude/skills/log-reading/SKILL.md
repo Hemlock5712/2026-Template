@@ -231,6 +231,7 @@ voltage, supply/stator current, closed-loop error/reference, device temperature,
 - **"Brownout / CAN trouble?"** `/SystemStats/BatteryVoltage`, `/SystemStats/Faults/*`,
   `/SystemStats/Network/CAN0..4/*`. Real hardware only — these are all flat in sim.
 - **"Are the wheels slipping?"** `Drivetrain/SkidRatio`, and `StatorCurrentAmps` against `kSlipCurrent`.
+- **"Where did the auto waste time?"** `python tools/auto_report.py <log>` - step durations, idle-while-arm-moves, arm motor headroom. Pass a `_replay.wpilog` and it diffs recording vs. replay.
 - **"Did my one-line change move anything?"** Replay the log and diff `/RealOutputs/*` against
   `/ReplayOutputs/*` — see the `run-replay` skill.
 

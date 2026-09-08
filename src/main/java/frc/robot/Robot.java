@@ -87,7 +87,7 @@ public class Robot extends OpModeRobot {
   public void simulationInit() {
     // Headless auto-enable for agent/CI runs; no-op unless -Dfrc.sim.startMode is set.
     // See the run-sim skill.
-    SimStartup.arm();
+    SimStartup.autoEnable();
   }
 
   // Last loop's timings, in microseconds. Pass zeros instead and LoggedRobot/FullCycleMS silently

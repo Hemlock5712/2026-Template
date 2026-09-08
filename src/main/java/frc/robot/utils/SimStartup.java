@@ -32,7 +32,7 @@ public final class SimStartup {
   /**
    * Optional self-destruct, so a scripted run (replayCheck, CI, a bring-up log) ends on its own.
    */
-  private static void armStopTimer() {
+  private static void startStopTimer() {
     double stopAfter = Double.parseDouble(System.getProperty("frc.sim.stopAfterSeconds", "0"));
     if (stopAfter <= 0) {
       return;
@@ -78,7 +78,7 @@ public final class SimStartup {
   }
 
   /** Reads {@code frc.sim.startMode} and, in simulation, selects an OpMode and enables the DS. */
-  public static void arm() {
+  public static void autoEnable() {
     // REPLAY is also "simulation", but there the DS state comes from the log - enabling it here
     // would overwrite the very inputs we are replaying.
     if (RunMode.current() != RunMode.SIM) {
@@ -87,7 +87,7 @@ public final class SimStartup {
 
     // Before the mode check: a disabled run is still a scripted run. Recording a bring-up log by
     // hand-moving a mechanism never enables the robot, and without this it never exits either.
-    armStopTimer();
+    startStopTimer();
 
     String spec = System.getProperty("frc.sim.startMode", "").trim();
 

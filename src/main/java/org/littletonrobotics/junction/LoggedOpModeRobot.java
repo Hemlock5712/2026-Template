@@ -1,23 +1,34 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
+// Copyright (c) 2021-2026 Littleton Robotics
+// http://github.com/Mechanical-Advantage
+//
+// Use of this source code is governed by a BSD
+// license that can be found in the LICENSE file
+// at the root directory of this project.
+//
+// Portions copyright (c) FIRST and other WPILib contributors, from
+// org.wpilib.framework.OpModeRobot (WPILib BSD license). The opmode registration and lifecycle
+// code below is a copy of that class; the loop and the callback scheduling are new.
 
-package org.wpilib.framework;
+package org.littletonrobotics.junction;
 
 import static org.wpilib.units.Units.Seconds;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Modifier;
 import java.net.JarURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Supplier;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -27,13 +38,13 @@ import org.wpilib.driverstation.RobotState;
 import org.wpilib.driverstation.UserControls;
 import org.wpilib.driverstation.UserControlsInstance;
 import org.wpilib.driverstation.internal.DriverStationBackend;
+import org.wpilib.framework.RobotBase;
 import org.wpilib.hardware.hal.ControlWord;
 import org.wpilib.hardware.hal.DriverStationJNI;
 import org.wpilib.hardware.hal.HAL;
 import org.wpilib.hardware.hal.NotifierJNI;
 import org.wpilib.hardware.hal.RobotMode;
 import org.wpilib.internal.PeriodicPriorityQueue;
-import org.wpilib.internal.PeriodicPriorityQueue.Callback;
 import org.wpilib.networktables.NetworkTableInstance;
 import org.wpilib.opmode.Autonomous;
 import org.wpilib.opmode.OpMode;
@@ -45,6 +56,7 @@ import org.wpilib.system.RobotController;
 import org.wpilib.system.Watchdog;
 import org.wpilib.util.Color;
 import org.wpilib.util.ConstructorMatch;
+import org.wpilib.util.WPIUtilJNI;
 
 /**
  * OpModeRobot implements the opmode-based robot program framework.
@@ -61,39 +73,53 @@ import org.wpilib.util.ConstructorMatch;
  * On disable or mode switch while enabled, {@link PeriodicOpMode#end()} is called asynchronously
  * and the opmode is then closed and discarded. When no opmode is selected, {@link #nonePeriodic()}
  * is called. {@link #driverStationConnected()} is called once when the DS first connects.
+ *
+ * <p>This is the AdvantageKit equivalent of WPILib's {@code OpModeRobot}, in the same way {@link
+ * LoggedRobot} is the equivalent of {@code TimedRobot}. It is a separate class rather than a
+ * subclass because {@code OpModeRobot.startCompetition()} is final and its loop is driven by {@code
+ * PeriodicPriorityQueue}, so there is no way to wrap the logging hooks around a cycle or to
+ * free-run the loop during replay.
+ *
+ * <p>Two deliberate differences from {@code OpModeRobot}:
+ *
+ * <ul>
+ *   <li>Everything runs from one periodic callback. {@link #addPeriodic(Runnable, double)} and an
+ *       opmode's {@code getCallbacks()} run inline at whole multiples of the loop period instead of
+ *       from a priority queue, so one log cycle is always one whole robot cycle and replay is
+ *       deterministic. A period that is not a multiple of the loop period is rounded to one.
+ *   <li>An opmode's {@code periodic()} runs only between {@code start()} and {@code end()},
+ *       matching WPILib main. (Alpha 6 also ran it while the robot was disabled.)
+ * </ul>
  */
-public abstract class OpModeRobot extends RobotBase {
+public abstract class LoggedOpModeRobot extends RobotBase {
   private final ControlWord m_word = new ControlWord();
 
   private record OpModeFactory(String name, Supplier<OpMode> supplier) {}
 
   private final Map<Long, OpModeFactory> m_opModes = new HashMap<>();
 
-  // Callback system fields (match C++ architecture)
-  private final PeriodicPriorityQueue m_callbacks = new PeriodicPriorityQueue();
+  /** A user callback and how many loop cycles apart it runs. */
+  private record PeriodicCallback(Runnable func, long everyNCycles) {}
 
-  /**
-   * Sets whether to use standard timing or run cycles as fast as possible. Mirrors {@code
-   * LoggedRobot.setUseTiming(boolean)}: log replay needs the loop driven by the log rather than by
-   * the clock, and startCompetition() is final so there is no other way in.
-   *
-   * @param useTiming false to run as fast as possible
-   */
-  public void setUseTiming(boolean useTiming) {
-    m_callbacks.setUseTiming(useTiming);
-  }
+  private final List<PeriodicCallback> m_userCallbacks = new ArrayList<>();
+  private final List<PeriodicCallback> m_opModeCallbacks = new ArrayList<>();
+  private long m_cycleCount;
+  private long m_loopStartTimeUs;
 
   private int m_notifier;
   private final double m_period;
+  private final long m_periodUs;
   private final long m_startTimeUs;
+  private long m_nextCycleUs;
+  private boolean m_useTiming = true;
+  private final GcStatsCollector m_gcStatsCollector = new GcStatsCollector();
 
   // OpMode lifecycle state
   private long m_lastModeId = -1;
   private boolean m_calledDriverStationConnected = false;
   private boolean m_lastEnabledState = false;
   private OpMode m_currentOpMode;
-  private Callback m_currentOpModePeriodic;
-  private final Set<Callback> m_activeOpModeCallbacks = new HashSet<>();
+  private boolean m_opModeStarted;
   private final Watchdog m_watchdog;
   private final Alert m_loopOverrunAlert;
 
@@ -550,7 +576,7 @@ public abstract class OpModeRobot extends RobotBase {
 
   /** Constructor with default period. */
   @SuppressWarnings("this-escape")
-  public OpModeRobot() {
+  public LoggedOpModeRobot() {
     this(DEFAULT_PERIOD);
   }
 
@@ -560,21 +586,23 @@ public abstract class OpModeRobot extends RobotBase {
    * @param period the period at which to run the robot and opmode periodic callbacks.
    */
   @SuppressWarnings("this-escape")
-  public OpModeRobot(double period) {
+  public LoggedOpModeRobot(double period) {
     m_period = period;
+    m_periodUs = (long) (period * 1e6);
 
-    // Create our own notifier and callback queue (match C++)
     m_notifier = NotifierJNI.createNotifier();
-    NotifierJNI.setNotifierName(m_notifier, "OpModeRobot");
+    NotifierJNI.setNotifierName(m_notifier, "LoggedOpModeRobot");
 
     m_startTimeUs = RobotController.getMonotonicTime();
+    m_nextCycleUs = m_startTimeUs + m_periodUs;
+
+    // The logger's install check only knows about LoggedRobot. Remove once Logger.start() accepts
+    // LoggedOpModeRobot too.
+    Logger.AdvancedHooks.disableRobotBaseCheck();
 
     m_loopOverrunAlert =
         new Alert("Loop time of \"" + m_period + "\"s overrun", Alert.Level.MEDIUM);
     m_watchdog = new Watchdog(Seconds.of(m_period), () -> m_loopOverrunAlert.set(true));
-
-    // Add LoopFunc as periodic callback (match C++)
-    addPeriodic(this::loopFunc, period);
 
     // Check to see if we have a DS annotation
     UserControlsInstance userControlsAnnotation =
@@ -589,16 +617,36 @@ public abstract class OpModeRobot extends RobotBase {
     RobotState.publishOpModes();
 
     HAL.reportUsage("Framework", "OpModeRobot");
+    HAL.reportUsage("LoggingFramework", "AdvantageKit");
   }
 
   /**
    * Add a callback to run at a specific period.
    *
+   * <p>The callback runs inline in the robot loop, at the nearest whole multiple of the loop
+   * period. Keeping every callback on the loop's own cadence is what makes one log cycle equal one
+   * robot cycle during replay.
+   *
    * @param callback The callback to run.
-   * @param period The period at which to run the callback.
+   * @param period The period at which to run the callback, rounded to a multiple of the loop
+   *     period.
    */
   public void addPeriodic(Runnable callback, double period) {
-    m_callbacks.add(callback, m_startTimeUs, period);
+    m_userCallbacks.add(new PeriodicCallback(callback, cyclesPer(period)));
+  }
+
+  /** Loop cycles per callback period, at least one. */
+  private long cyclesPer(double periodSeconds) {
+    return Math.max(1, Math.round(periodSeconds / m_period));
+  }
+
+  /** Runs the callbacks whose period comes around on this cycle. */
+  private void runCallbacks(List<PeriodicCallback> callbacks) {
+    for (PeriodicCallback callback : callbacks) {
+      if (m_cycleCount % callback.everyNCycles() == 0) {
+        callback.func().run();
+      }
+    }
   }
 
   /**
@@ -650,15 +698,11 @@ public abstract class OpModeRobot extends RobotBase {
    * @return Robot running time in microseconds, as of the start of the current periodic function.
    */
   public long getLoopStartTime() {
-    return m_callbacks.getLoopStartTime();
+    return m_loopStartTimeUs;
   }
 
   /** Main robot loop function. Handles disabled state logic and opmode management. */
   private void loopFunc() {
-    DriverStationBackend.refreshData();
-
-    // Get current enabled state and opmode
-    DriverStationBackend.refreshControlWordFromCache(m_word);
     m_watchdog.reset();
     boolean enabled = m_word.isEnabled();
     long modeId = m_word.isDSAttached() ? m_word.getOpModeId() : 0;
@@ -673,10 +717,8 @@ public abstract class OpModeRobot extends RobotBase {
     if (modeId != m_lastModeId) {
       // Clean up current opmode
       if (m_currentOpMode != null) {
-        // Remove opmode callbacks
-        m_callbacks.remove(m_currentOpModePeriodic);
-        m_callbacks.removeAll(m_activeOpModeCallbacks);
-        m_activeOpModeCallbacks.clear();
+        m_opModeCallbacks.clear();
+        m_opModeStarted = false;
         m_currentOpMode.end();
         m_currentOpMode.close();
         m_currentOpMode = null;
@@ -693,11 +735,11 @@ public abstract class OpModeRobot extends RobotBase {
             // Ensure disabledPeriodic is called at least once
             m_currentOpMode.disabledPeriodic();
             m_watchdog.addEpoch("opMode.disabledPeriodic()");
-            // Register the opmode's periodic callbacks
-            m_currentOpModePeriodic =
-                m_callbacks.add(m_currentOpMode::periodic, m_startTimeUs, m_period);
-            m_activeOpModeCallbacks.addAll(m_currentOpMode.getCallbacks());
-            m_callbacks.addAll(m_activeOpModeCallbacks);
+            // periodic() is called inline below; these are the opmode's extra callbacks.
+            for (PeriodicPriorityQueue.Callback callback : m_currentOpMode.getCallbacks()) {
+              m_opModeCallbacks.add(
+                  new PeriodicCallback(callback.func, cyclesPer(callback.period / 1e6)));
+            }
           }
         } else {
           DriverStationErrors.reportError("No OpMode found for mode " + modeId, false);
@@ -715,6 +757,7 @@ public abstract class OpModeRobot extends RobotBase {
         m_watchdog.addEpoch("disabledExit()");
         if (m_currentOpMode != null) {
           m_currentOpMode.start();
+          m_opModeStarted = true;
           m_watchdog.addEpoch("opMode.start()");
         }
       } else {
@@ -722,6 +765,7 @@ public abstract class OpModeRobot extends RobotBase {
         if (m_currentOpMode != null && m_lastEnabledState) {
           // Was enabled, now disabled
           m_currentOpMode.end();
+          m_opModeStarted = false;
           m_watchdog.addEpoch("opMode.end()");
         }
         disabledInit();
@@ -732,7 +776,12 @@ public abstract class OpModeRobot extends RobotBase {
     }
 
     // Call periodic functions based on current state
-    if (!enabled) {
+    if (enabled) {
+      if (m_opModeStarted) {
+        m_currentOpMode.periodic();
+        m_watchdog.addEpoch("opMode.periodic()");
+      }
+    } else {
       // Only call disabledPeriodic if we didn't just call disabledInit
       if (!justCalledDisabledInit) {
         disabledPeriodic();
@@ -745,6 +794,12 @@ public abstract class OpModeRobot extends RobotBase {
         m_watchdog.addEpoch("opMode.disabledPeriodic()");
       }
     }
+
+    // Registered callbacks: the opmode's own, then the robot's.
+    runCallbacks(m_opModeCallbacks);
+    m_watchdog.addEpoch("opMode callbacks");
+    runCallbacks(m_userCallbacks);
+    m_watchdog.addEpoch("addPeriodic callbacks");
 
     // Call nonePeriodic when no opmode is selected
     if (RobotState.getOpModeId() == 0) {
@@ -783,22 +838,86 @@ public abstract class OpModeRobot extends RobotBase {
 
   /** Provide an alternate "main loop" via startCompetition(). */
   @Override
-  public final void startCompetition() {
-    System.out.println("********** Robot program startup complete **********");
-
-    if (isSimulation()) {
-      simulationInit();
-    }
-
-    // Tell the DS that the robot is ready to be enabled
-    DriverStationBackend.observeUserProgramStarting();
-
-    // Loop forever, calling the callback system which handles periodic functions
-    while (true) {
-      if (!m_callbacks.runCallbacks(m_notifier)) {
-        break;
+  @SuppressWarnings("UnsafeFinalization")
+  public void startCompetition() {
+    try {
+      long initStart = RobotController.getMonotonicTime();
+      if (isSimulation()) {
+        simulationInit();
       }
+      long initEnd = RobotController.getMonotonicTime(); // Includes constructor and opmode scan
+
+      // Register auto logged outputs
+      AutoLogOutputManager.addObject(this);
+
+      // Save data from init cycle
+      Logger.periodicAfterUser(initEnd - initStart, 0);
+
+      System.out.println("********** Robot program startup complete **********");
+
+      // Tell the DS that the robot is ready to be enabled
+      DriverStationBackend.observeUserProgramStarting();
+
+      // Loop forever, one whole robot cycle per pass
+      while (true) {
+        if (m_useTiming) {
+          long currentTimeUs = RobotController.getMonotonicTime();
+          if (m_nextCycleUs < currentTimeUs) {
+            // Loop overrun, start next cycle immediately
+            m_nextCycleUs = currentTimeUs;
+          } else {
+            NotifierJNI.setNotifierAlarm(m_notifier, m_nextCycleUs, 0, true, true);
+            try {
+              WPIUtilJNI.waitForObject(m_notifier);
+            } catch (InterruptedException ex) {
+              Logger.end();
+              Thread.currentThread().interrupt();
+              break;
+            }
+          }
+          m_nextCycleUs += m_periodUs;
+        }
+
+        m_loopStartTimeUs = RobotController.getMonotonicTime();
+
+        long periodicBeforeStart = RobotController.getMonotonicTime();
+        Logger.periodicBeforeUser();
+        long userCodeStart = RobotController.getMonotonicTime();
+        loopFunc();
+        long userCodeEnd = RobotController.getMonotonicTime();
+        m_cycleCount++;
+
+        // Snapshot the driver station for the next cycle, here rather than at the top of the
+        // cycle, because Logger.periodicAfterUser() below is where AdvantageKit saves the DS
+        // state: the log then holds the same state the next cycle acts on. Refreshing at the top
+        // of a cycle instead is more natural, but a DS change arriving mid-cycle is then written
+        // into the entry the cycle already acted on without it, and replay applies that change one
+        // cycle early - every enable and opmode transition shifts. The real fix is on the
+        // AdvantageKit side: capture the DS in periodicBeforeUser, where replay applies it, so
+        // both directions read it at the same point in the cycle.
+        DriverStationBackend.refreshData();
+        DriverStationBackend.refreshControlWordFromCache(m_word);
+
+        m_gcStatsCollector.update();
+        Logger.periodicAfterUser(userCodeEnd - userCodeStart, userCodeStart - periodicBeforeStart);
+      }
+    } catch (Exception exception) {
+      // Exception thrown, log crash information
+      StringWriter stringWriter = new StringWriter();
+      exception.printStackTrace(new PrintWriter(stringWriter));
+      Logger.periodicAfterUser(0, 0, stringWriter.toString());
+      Logger.end();
+      throw exception;
     }
+  }
+
+  /**
+   * Sets whether to use standard timing or run as fast as possible.
+   *
+   * @param useTiming If true, use standard timing. If false, run as fast as possible.
+   */
+  public void setUseTiming(boolean useTiming) {
+    m_useTiming = useTiming;
   }
 
   @Override
@@ -808,12 +927,35 @@ public abstract class OpModeRobot extends RobotBase {
 
   /** Ends the main loop in startCompetition(). */
   @Override
-  public final void endCompetition() {
+  public void endCompetition() {
     NotifierJNI.destroyNotifier(m_notifier);
   }
 
   /** Prints list of epochs added so far and their times. */
   public void printWatchdogEpochs() {
     m_watchdog.printEpochs();
+  }
+
+  private static final class GcStatsCollector {
+    private List<GarbageCollectorMXBean> gcBeans = ManagementFactory.getGarbageCollectorMXBeans();
+    private final long[] lastTimes = new long[gcBeans.size()];
+    private final long[] lastCounts = new long[gcBeans.size()];
+
+    public void update() {
+      long accumTime = 0;
+      long accumCounts = 0;
+      for (int i = 0; i < gcBeans.size(); i++) {
+        long gcTime = gcBeans.get(i).getCollectionTime();
+        long gcCount = gcBeans.get(i).getCollectionCount();
+        accumTime += gcTime - lastTimes[i];
+        accumCounts += gcCount - lastCounts[i];
+
+        lastTimes[i] = gcTime;
+        lastCounts[i] = gcCount;
+      }
+
+      Logger.recordOutput("LoggedRobot/GCTimeMS", (double) accumTime);
+      Logger.recordOutput("LoggedRobot/GCCounts", (double) accumCounts);
+    }
   }
 }

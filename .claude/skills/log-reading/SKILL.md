@@ -86,6 +86,7 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/RealOutputs/Drivetrain/Request` | `string` | The `SwerveRequest` subclass in force |
 | `/RealOutputs/Drivetrain/CommandedVelocity` | `struct:ChassisVelocities` | The velocity the request asked for. Graph against `ModuleVelocities` to see what the drive actually did |
 | `/RealOutputs/Drivetrain/SkidRatio` | `double` | Instrumentation only — nothing acts on it. Read `SkidDetector`'s blind spots first |
+| `/RealOutputs/Drivetrain/WheelForceDemandNewtons` | `double[]` | Force this cycle's velocity change asked of each module, from CTRE's `WheelForceCalculator`. Demand, not grip — no load transfer in it, and it scales with the mass/MOI still hard-coded in `LoggedSwerveDrivetrain` |
 | `/RealOutputs/Arm/AngleDegrees` | `double` | Measured arm angle. **0° = straight out horizontally** (the `Arm_Cosine` frame), so the presets read: scoring ≈ 30°, **stow = 90°**, intake = 180°. Stow is not 0. |
 | `/RealOutputs/Arm/TargetDegrees` | `double` | Angle the arm is driving toward — graph against `AngleDegrees` |
 | `/RealOutputs/BringUp/Arm/MeasuredRatio` | `double` | Measured rotor:mechanism ratio, signed, sampled at the furthest travel so far. `NaN` until the arm has moved. See the `device-bringup` skill |
@@ -231,6 +232,7 @@ voltage, supply/stator current, closed-loop error/reference, device temperature,
 - **"Brownout / CAN trouble?"** `/SystemStats/BatteryVoltage`, `/SystemStats/Faults/*`,
   `/SystemStats/Network/CAN0..4/*`. Real hardware only — these are all flat in sim.
 - **"Are the wheels slipping?"** `Drivetrain/SkidRatio`, and `StatorCurrentAmps` against `kSlipCurrent`.
+- **"How much traction did a launch use?"** `Drivetrain/WheelForceDemandNewtons` per module against that module's `StatorCurrentAmps`. Front and rear diverging under hard accel is load transfer, which a single `kSlipCurrent` cannot see.
 - **"Where did the auto waste time?"** `python tools/auto_report.py <log>` - step durations, idle-while-arm-moves, arm motor headroom. Pass a `_replay.wpilog` and it diffs recording vs. replay.
 - **"Did my one-line change move anything?"** Replay the log and diff `/RealOutputs/*` against
   `/ReplayOutputs/*` — see the `run-replay` skill.

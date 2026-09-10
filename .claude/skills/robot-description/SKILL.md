@@ -179,8 +179,10 @@ for a real robot. Key values:
 **AdvantageKit with replay** (this branch descends from `advanced-replay`; plain `main` is
 logging-only).
 [Robot.java](src/main/java/frc/robot/Robot.java) starts the `Logger` (`WPILOGWriter` +
-`NT4Publisher`) and ticks it in `robotPeriodic()` — this template extends `OpModeRobot`, not
-`LoggedRobot`, so the tick is manual via `Logger.AdvancedHooks`.
+`NT4Publisher`). The tick is not manual: `Robot` extends
+[LoggedOpModeRobot](src/main/java/org/littletonrobotics/junction/LoggedOpModeRobot.java), our
+AdvantageKit-side equivalent of `OpModeRobot`, which owns the loop and the logging hooks. See the
+run-replay skill for why it exists.
 
 Every sensor is read through a wrapper in
 [frc/robot/hardware](src/main/java/frc/robot/hardware) and collected once per loop by
@@ -229,7 +231,7 @@ Physics is CTRE's Phoenix 6 swerve plant sim (no maple-sim). Full details in the
 | Bring-up measurements (ratio, offset, kG/kV) | [hardware/BringUp.java](src/main/java/frc/robot/hardware/BringUp.java) + [opmodes/BringUpOpMode.java](src/main/java/frc/robot/opmodes/BringUpOpMode.java) |
 | REAL / SIM / REPLAY mode | [utils/RunMode.java](src/main/java/frc/robot/utils/RunMode.java) |
 | Replay regression check | [ReplayCheck.java](src/test/java/frc/robot/ReplayCheck.java) (`./gradlew replayCheck`) |
-| Patched WPILib copies (delete once upstream) | `src/main/java/org/wpilib/` |
+| AdvantageKit opmode base class (delete once upstream) | [org/littletonrobotics/junction/LoggedOpModeRobot.java](src/main/java/org/littletonrobotics/junction/LoggedOpModeRobot.java) |
 | Headless sim auto-enable | [utils/SimStartup.java](src/main/java/frc/robot/utils/SimStartup.java) |
 | Vision → pose estimator (per-camera) | [vision/Vision.java](src/main/java/frc/robot/subsystems/vision/Vision.java) |
 | Limelight camera objects (hardware) | [Robot.java](src/main/java/frc/robot/Robot.java) (`limelightBR` / `limelightBL`, `LoggedLimelight` wrapping the LimelightLib vendordep) |

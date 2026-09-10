@@ -9,6 +9,8 @@ import static org.wpilib.units.Units.Hertz;
 import com.ctre.phoenix6.StatusCode;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import com.ctre.phoenix6.swerve.SwerveRequest;
+import com.ctre.phoenix6.swerve.utility.WheelForceCalculator;
+import frc.robot.Robot;
 import frc.robot.subsystems.CommandSwerveDrivetrain;
 import frc.robot.utils.RunMode;
 import frc.robot.utils.SkidDetector;
@@ -97,6 +99,11 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
 
   // Built on the first loop, not in the constructor: no module data exists until the first refresh.
   private SwerveDrivePoseEstimator estimator;
+
+  // Also first-loop, and the velocity it differences against. Copied, not aliased - CTRE reuses
+  // the state object, so holding its reference would difference a value against itself.
+  private WheelForceCalculator wheelForces;
+  private ChassisVelocities previousVelocity = new ChassisVelocities();
 
   // WPILib takes both in the constructor, so changing either rebuilds the estimator. These are its
   // defaults - state 0.1 m / 0.1 rad, vision 0.9 m / 0.9 rad.
@@ -472,6 +479,22 @@ public class LoggedSwerveDrivetrain implements LoggedHardware.Device {
         "Drivetrain/SkidRatio",
         SkidDetector.ratio(
             inputs.moduleVelocities, drivetrain.getModuleLocations(), inputs.velocity.omega));
+    // What the last cycle's velocity change ASKED of each module. Rigid-body allocation only: it
+    // knows nothing about load transfer, so this is demand, not grip. Read it against each module's
+    // StatorCurrentAmps to see how much of the traction budget a launch really used.
+    // TODO measure the robot's mass and yaw MOI - both scale this output linearly.
+    if (wheelForces == null) {
+      wheelForces = new WheelForceCalculator(drivetrain.getModuleLocations(), 55.0, 6.0);
+    }
+    var demand = wheelForces.calculate(Robot.PERIOD_SECONDS, previousVelocity, inputs.velocity);
+    double[] demandNewtons = new double[demand.x_newtons.length];
+    for (int i = 0; i < demandNewtons.length; i++) {
+      demandNewtons[i] = Math.hypot(demand.x_newtons[i], demand.y_newtons[i]);
+    }
+    Logger.recordOutput("Drivetrain/WheelForceDemandNewtons", demandNewtons);
+    previousVelocity =
+        new ChassisVelocities(inputs.velocity.vx, inputs.velocity.vy, inputs.velocity.omega);
+
     Logger.recordOutput("Drivetrain/EstimatedPose", getPose());
     // Near zero means the re-integration matches CTRE's - i.e. replay is seeing the real thing.
     Logger.recordOutput(

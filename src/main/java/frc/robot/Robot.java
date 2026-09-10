@@ -12,23 +12,21 @@ import frc.robot.subsystems.flywheel.Flywheel;
 import frc.robot.subsystems.vision.Vision;
 import frc.robot.utils.RunMode;
 import frc.robot.utils.SimStartup;
-import org.littletonrobotics.junction.AutoLogOutputManager;
 import org.littletonrobotics.junction.LogFileUtil;
+import org.littletonrobotics.junction.LoggedOpModeRobot;
 import org.littletonrobotics.junction.Logger;
 import org.littletonrobotics.junction.networktables.NT4Publisher;
 import org.littletonrobotics.junction.wpilog.WPILOGReader;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
-import org.wpilib.framework.OpModeRobot;
-import org.wpilib.system.RobotController;
 
 /**
  * Owns the robot's shared hardware. There is no {@code RobotContainer}: subsystems live here as
  * public fields, and each OpMode in {@code frc.robot.opmodes} reaches them through the {@link
  * Robot} it is constructed with.
  */
-public class Robot extends OpModeRobot {
+public class Robot extends LoggedOpModeRobot {
   /**
    * How often everything runs: 200 Hz, not WPILib's usual 50. A drive command only moves in steps
    * of {@code acceleration * PERIOD_SECONDS}, so a shorter step means the motor is asked for a
@@ -65,9 +63,7 @@ public class Robot extends OpModeRobot {
       Logger.addDataReceiver(new WPILOGWriter());
       Logger.addDataReceiver(new NT4Publisher());
     }
-    Logger.AdvancedHooks.disableRobotBaseCheck(); // we extend OpModeRobot, not LoggedRobot
     Logger.start();
-    AutoLogOutputManager.addObject(this);
 
     // Replay reads one log entry per loop, so let the loop run as fast as the CPU allows instead
     // of sleeping 5 ms of wall clock between cycles.
@@ -90,27 +86,13 @@ public class Robot extends OpModeRobot {
     SimStartup.autoEnable();
   }
 
-  // Last loop's timings, in microseconds. Pass zeros instead and LoggedRobot/FullCycleMS silently
-  // measures only the logger's own time.
-  private long userTimeMicros = 0;
-  private long beforeTimeMicros = 0;
-
   @Override
   public void robotPeriodic() {
-    // AdvantageKit: flush the previous logging cycle, start this one.
-    Logger.AdvancedHooks.invokePeriodicAfterUser(userTimeMicros, beforeTimeMicros);
-    long beforeStart = RobotController.getMonotonicTime();
-    Logger.AdvancedHooks.invokePeriodicBeforeUser();
-    long userStart = RobotController.getMonotonicTime();
-
     // Read every device once, before any command looks at one. ORDER MATTERS: this is what makes
     // replay feed logged values in place of CAN.
     LoggedHardware.refreshAll();
 
     Scheduler.getDefault().run();
-
-    beforeTimeMicros = userStart - beforeStart;
-    userTimeMicros = RobotController.getMonotonicTime() - userStart;
   }
 
   // ---------------------------------------------------------------------------

@@ -152,8 +152,21 @@ wall clock, which is *meant* to differ when replay runs 33x faster.
 
 - [RunMode.java](../../src/main/java/frc/robot/utils/RunMode.java) — REAL / SIM / REPLAY, from `-Dfrc.replay`.
 - [Robot.java](../../src/main/java/frc/robot/Robot.java) — sets the replay source, and calls
-  `setUseTiming(false)` so the loop free-runs instead of sleeping 20 ms per cycle (4x → 33x).
-- `src/main/java/org/wpilib/**` — **local copies of two WPILib files**, patched to add that
-  `setUseTiming` switch, because `OpModeRobot.startCompetition()` is `final`. Re-copy them from the
-  wpilibj sources on every WPILib bump. Delete both once the change lands upstream.
+  `setUseTiming(false)` so the loop free-runs instead of sleeping 5 ms per cycle (~6x, CPU-bound).
+- [LoggedOpModeRobot.java](../../src/main/java/org/littletonrobotics/junction/LoggedOpModeRobot.java)
+  — **our own class, written to be handed to AdvantageKit.** It is what `LoggedRobot` is for
+  `TimedRobot`: WPILib's `OpModeRobot.startCompetition()` is `final` and drives its loop from
+  `PeriodicPriorityQueue`, so there is no way to wrap the logging hooks around a cycle or to
+  free-run it. This copies the opmode registration and lifecycle, runs everything from one
+  periodic callback, and owns the loop. Delete it once AdvantageKit ships the equivalent.
+
+  Two things in it are load-bearing for replay, and both bite quietly:
+
+  1. The driver station is refreshed at the **end** of a cycle, for the next one, because that is
+     where AdvantageKit saves the DS state (`Logger.periodicAfterUser`). Refresh it at the top of
+     a cycle instead and a DS change arriving mid-cycle is recorded into the entry the cycle
+     already acted on without it — replay applies it one cycle early and every enable and opmode
+     transition shifts. At 200 Hz that broke about half of all runs.
+  2. `addPeriodic` and an opmode's `getCallbacks()` run inline at whole multiples of the loop
+     period, not from a queue, so one log cycle is always one whole robot cycle.
 - [ReplayCheck.java](../../src/test/java/frc/robot/ReplayCheck.java) — the comparison.

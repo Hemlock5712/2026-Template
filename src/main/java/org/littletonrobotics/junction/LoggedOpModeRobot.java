@@ -879,17 +879,13 @@ public abstract class LoggedOpModeRobot extends RobotBase {
         long periodicBeforeStart = RobotController.getMonotonicTime();
         loopStartTimeUs = periodicBeforeStart;
         Logger.periodicBeforeUser();
+        // Refresh DS data after periodicBeforeUser (replay loads it there) and before user code
+        DriverStationBackend.refreshData();
+        DriverStationBackend.refreshControlWordFromCache(word);
         long userCodeStart = RobotController.getMonotonicTime();
         loopFunc();
         long userCodeEnd = RobotController.getMonotonicTime();
         cycleCount++;
-
-        // Refresh here, immediately before periodicAfterUser() saves the driver station, so the
-        // logged control word is the one the next cycle acts on. Refreshing at the top of a cycle
-        // instead leaves a whole cycle between read and save, which shifts enable and opmode
-        // transitions by one cycle during replay.
-        DriverStationBackend.refreshData();
-        DriverStationBackend.refreshControlWordFromCache(word);
 
         gcStatsCollector.update();
         Logger.periodicAfterUser(userCodeEnd - userCodeStart, userCodeStart - periodicBeforeStart);

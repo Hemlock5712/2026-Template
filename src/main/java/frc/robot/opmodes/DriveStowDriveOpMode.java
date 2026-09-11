@@ -35,14 +35,14 @@ public class DriveStowDriveOpMode extends PeriodicOpMode {
     final Pose2d pose2 = new Pose2d(2.0, 1.5, Rotation2d.fromDegrees(90)); // then 1.5 m left
 
     //        Logger.recordOutput("Auto/Step", step);
-    // Logger.recordOutput("Auto/ArmStowedAtStepStart", robot.arm.atVertical());
+    // Logger.recordOutput("Auto/ArmStowedAtStepStart", robot.arm.atPosition());
     routine =
         Command.sequence(
                 // Leg 1: DriveToPose finishes on its own, so it can sit in a sequence as-is.
                 new DriveToPose(robot.drivetrain, pose1),
 
                 // Stow is a hold - .until(...) gives it a finish line at the stow angle.
-                robot.stow().until(robot.arm::atVertical).named("stow until stowed"),
+                robot.stow().until(robot.arm::atPosition).named("stow until stowed"),
 
                 // Leg 2 WHILE holding stow: the drive finishes, the race cancels the hold.
                 Command.race(new DriveToPose(robot.drivetrain, pose2), robot.stow())

@@ -181,6 +181,10 @@ public class LoggedTalonFX implements LoggedHardware.Device {
     return device;
   }
 
+  public void stopMotor() {
+    device.stopMotor();
+  }
+
   @Override
   public void updateInputs() {
     inputs.connected =

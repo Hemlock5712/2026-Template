@@ -130,7 +130,7 @@ When one step *does* need to finish, give it a finish line **at the call site** 
 add a "...AndWait" version to the subsystem:
 
 ```java
-arm.scoring().until(arm::isAtTarget)   // same hold, but finishes when the arm arrives
+arm.scoring().until(arm::atPosition)   // same hold, but finishes when the arm arrives
 ```
 
 Which tool for "do things in order" — each one is stuck-proof for its job. **Chaining (the first

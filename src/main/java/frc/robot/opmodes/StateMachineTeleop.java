@@ -38,7 +38,7 @@ public class StateMachineTeleop extends PeriodicOpMode {
     State pickup = sm.addState(robot.intake());
     State prep =
         sm.addState(
-            robot.arm.scoring().until(robot.arm::atScoring).named("scoring until at target"));
+            robot.arm.scoring().until(robot.arm::atPosition).named("scoring until at target"));
     State scoring = sm.addState(robot.score());
 
     // 3. Every machine needs a starting state.
@@ -46,7 +46,7 @@ public class StateMachineTeleop extends PeriodicOpMode {
 
     // 4. Wire transitions. when(...) is checked every tick and fires on false -> true.
     stowed.switchTo(pickup).when(driver.leftTrigger());
-    pickup.switchTo(prep).when(robot.arm::atHorizontal); // real robot: a game-piece sensor
+    pickup.switchTo(prep).when(robot.arm::atPosition); // real robot: a game-piece sensor
 
     // prep's command finishes on its own, so use whenComplete() instead of when(...).
     prep.switchTo(scoring).whenComplete();

@@ -285,18 +285,10 @@ is done.
 2. Negate `/Hardware/CANcoder/<name>/AbsolutePositionRot` at the end of the log — that is the
    delta, because absolute position already has the current `MagnetOffset` applied.
    `tools/bringup_report.py` prints it for you.
-3. **Add** it to the existing `MagnetOffset` in Tuner X, or in code:
-
-```java
-CANcoderConfiguration config = new CANcoderConfiguration();
-encoder.device().getConfigurator().refresh(config);   // refresh FIRST
-config.MagnetSensor.MagnetOffset += delta;
-encoder.device().getConfigurator().apply(config);
-```
-
-`refresh()` before `apply()` is not optional — `apply()` writes **every** field, so building a
-fresh config object silently wipes the offset you are trying to set. Same trap as the
-`AbsoluteSensorDiscontinuityPoint` block in [Arm.java](src/main/java/frc/robot/subsystems/arm/Arm.java).
+3. **Add** it to the existing `MagnetOffset` in Tuner X. While you are there, set
+   `AbsoluteSensorDiscontinuityPoint` to `1.0` (0..1 rotations) — the default ±0.5 seam sits right
+   on the arm's horizontal pose. CANcoder settings live on the device, never in robot code: a
+   `CANcoderConfiguration.apply()` from code writes **every** field and would wipe the offset.
 
 ## Writing the results into the code
 

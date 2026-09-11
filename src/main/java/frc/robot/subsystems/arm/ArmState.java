@@ -7,7 +7,6 @@ package frc.robot.subsystems.arm;
 import static org.wpilib.units.Units.Degrees;
 import static org.wpilib.units.Units.Rotations;
 
-import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVoltage;
 import com.ctre.phoenix6.signals.GravityTypeValue;
@@ -37,6 +36,7 @@ public class ArmState extends Mechanism {
   // 50 motor turns = 1 arm turn. Confirm on hardware with the "Bring-Up" utility OpMode.
   private static final double GEAR_RATIO = 50.0;
 
+  // Magnet offset and 0..1 range are set on the CANcoder itself in Tuner X, not here.
   private final LoggedTalonFX motor = new LoggedTalonFX(31, TunerConstants.kCANBus, "Arm");
   private final LoggedCANcoder encoder = new LoggedCANcoder(32, TunerConstants.kCANBus, "Arm");
   private final MotionMagicVoltage positionOut = new MotionMagicVoltage(0);
@@ -51,13 +51,6 @@ public class ArmState extends Mechanism {
   public final Command scoring = buildCommand(0.083, "scoring");
 
   public ArmState() {
-    // refresh() first: apply() writes EVERY field and would zero the Tuner X MagnetOffset.
-    CANcoderConfiguration encoderConfig = new CANcoderConfiguration();
-    encoder.device().getConfigurator().refresh(encoderConfig);
-    // 0..1 rotations, not -0.5..0.5 - the default seam sits right on HORIZONTAL (0.5).
-    encoderConfig.MagnetSensor.AbsoluteSensorDiscontinuityPoint = 1.0;
-    encoder.device().getConfigurator().apply(encoderConfig);
-
     TalonFXConfiguration config = new TalonFXConfiguration();
     config.MotorOutput.NeutralMode = NeutralModeValue.Brake; // coast = arm falls when disabled
     config.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;

@@ -105,7 +105,7 @@ It walks through the same mechanisms this template has. Best pages to share:
 - **"My auto/sequence is stuck and won't move on."** → Our mechanism commands are **holds** — they
   keep the motor on target *forever*, so anything that waits for one waits forever. Look at the
   dashboard/log: if the stuck step is named `(hold)`, that's it. Fix: give that one step a finish
-  line right where you use it — `arm.scoring().until(arm::atScoring)` — or, to do a step *while*
+  line right where you use it — `arm.scoring().until(arm::atPosition)` — or, to do a step *while*
   holding a pose, `Command.race(step, hold)`. Working example: `DriveStowDriveOpMode.java`.
   The full rule + a "which tool when" table is in `ONBOARDING.md` ("Holds never finish").
 

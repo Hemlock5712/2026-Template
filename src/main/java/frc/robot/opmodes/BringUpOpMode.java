@@ -31,7 +31,7 @@ public class BringUpOpMode extends PeriodicOpMode {
   public BringUpOpMode(Robot robot) {
     // Three presets, so the arm travels far enough that the ratio isn't sensor noise.
     //
-    // Timed rather than .until(arm::atVertical): every pose has to sit STILL long enough for its
+    // Timed rather than .until(arm::atPosition): every pose has to sit STILL long enough for its
     // holding voltage to settle, or there is no kG to measure.
     Command sweep =
         Command.sequence(

@@ -121,7 +121,8 @@ public class Robot extends LoggedOpModeRobot {
    */
   public Command autoScore() {
     return Command.parallel(
-            arm.scoring().until(arm::atScoring).named("scoring until at target"), flywheel.spinUp())
+            arm.scoring().until(arm::atPosition).named("scoring until at target"),
+            flywheel.spinUp())
         .named("AutoScore (hold)");
   }
 }

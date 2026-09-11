@@ -7,7 +7,6 @@ package frc.robot.subsystems.arm;
 import static org.wpilib.units.Units.Degrees;
 import static org.wpilib.units.Units.Rotations;
 
-import com.ctre.phoenix6.configs.CANcoderConfiguration;
 import com.ctre.phoenix6.configs.TalonFXConfiguration;
 import com.ctre.phoenix6.controls.MotionMagicVoltage;
 import com.ctre.phoenix6.signals.GravityTypeValue;
@@ -25,180 +24,103 @@ import org.wpilib.command3.Scheduler;
 import org.wpilib.math.system.DCMotor;
 import org.wpilib.simulation.SingleJointedArmSim;
 import org.wpilib.system.RobotController;
-import org.wpilib.units.measure.Angle;
 
 /**
- * Arm - an example subsystem on a TalonFX + CANcoder. The pattern: own the hardware, keep setters
- * private, expose commands - that's how the scheduler stops two things from fighting over the
- * motor.
+ * Arm - an example subsystem on a TalonFX + CANcoder. Owns the hardware, keeps setters private,
+ * exposes commands - that's how the scheduler stops two things from fighting over the motor.
  */
 public class Arm extends Mechanism {
-  // Position setpoints (rotations, 1.0 = full turn).
-  private static final double VERTICAL_POSITION = 0.25; // 90°  - stowed / safe transport
-  private static final double HORIZONTAL_POSITION = 0.5; // 180° - ground intake
-  private static final double SCORING_POSITION = 0.083; // ~30° - scoring
-
-  // 50 motor turns = 1 arm turn. Confirm on hardware with the "Bring-Up" utility OpMode before
-  // trusting it - see the device-bringup skill.
+  // 50 motor turns = 1 arm turn. Confirm on hardware with the "Bring-Up" utility OpMode.
   private static final double GEAR_RATIO = 50.0;
 
+  // Magnet offset and 0..1 range are set on the CANcoder itself in Tuner X, not here.
   private final LoggedTalonFX motor = new LoggedTalonFX(31, TunerConstants.kCANBus, "Arm");
   private final LoggedCANcoder encoder = new LoggedCANcoder(32, TunerConstants.kCANBus, "Arm");
-
-  // Drives the arm to a target angle with a smooth Motion Magic profile.
   private final MotionMagicVoltage positionOut = new MotionMagicVoltage(0);
 
-  // How close counts as "at target".
-  private static final Angle TOLERANCE = Degrees.of(1.0);
-
   public Arm() {
-    // Report angles as 0 to 1 rotations, not -0.5 to +0.5. The default range puts its seam right
-    // on HORIZONTAL_POSITION (0.5), where the arm could read -0.5 and drive a full turn the
-    // wrong way.
-    //
-    // refresh() first: apply() writes EVERY field, so building a fresh config here would zero the
-    // MagnetOffset you set in Tuner X. Read the device's settings, change the one we care about,
-    // write it back.
-    CANcoderConfiguration encoderConfig = new CANcoderConfiguration();
-    encoder.device().getConfigurator().refresh(encoderConfig);
-    encoderConfig.MagnetSensor.AbsoluteSensorDiscontinuityPoint = 1.0;
-    encoder.device().getConfigurator().apply(encoderConfig);
-
     TalonFXConfiguration config = new TalonFXConfiguration();
-    // Brake, not coast - a coasting arm falls to its hard stop whenever the robot is disabled.
-    config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
+    config.MotorOutput.NeutralMode = NeutralModeValue.Brake; // coast = arm falls when disabled
     config.MotorOutput.Inverted = InvertedValue.CounterClockwise_Positive;
-    config.Slot0.GravityType = GravityTypeValue.Arm_Cosine; // fights gravity automatically
-
-    // Gains that work in sim. Re-tune on the real robot.
-    config.Slot0.kG = 0.34; // holds the arm up against gravity; measured, see device-bringup
-    config.Slot0.kS = 0.2; // the nudge to get moving
-    config.Slot0.kP = 160.0; // push harder the bigger the miss
-    config.Slot0.kD = 2.0; // damping. Keep it small - too big and the arm shakes.
-
-    // How fast the arm may move (rot/s) and speed up (rot/s²).
-    config.MotionMagic.MotionMagicCruiseVelocity = 2.0;
-    config.MotionMagic.MotionMagicAcceleration = 4.0;
-
+    config.Slot0.GravityType = GravityTypeValue.Arm_Cosine;
+    // Gains that work in sim. Re-tune on the real robot - see device-bringup.
+    config.Slot0.kG = 0.34;
+    config.Slot0.kS = 0.2;
+    config.Slot0.kP = 160.0;
+    config.Slot0.kD = 2.0;
+    config.MotionMagic.MotionMagicCruiseVelocity = 2.0; // rot/s
+    config.MotionMagic.MotionMagicAcceleration = 4.0; // rot/s^2
     config.Feedback.withRemoteCANcoder(encoder.device());
-    // Only used if you upgrade to withFusedCANcoder (needs a Phoenix Pro license), but declare it
-    // anyway - it's the number the Bring-Up sweep measures, and a wrong one is invisible until
-    // the arm drives to the wrong angle.
     config.Feedback.RotorToSensorRatio = GEAR_RATIO;
-
     motor.configure(config);
 
-    // Not isSimulation(): that is also true during replay, where the log supplies the sensor
-    // values and re-running the physics would fight it.
+    // Not isSimulation(): that is also true in replay, where the log supplies sensor values.
     if (RunMode.current() == RunMode.SIM) {
       Scheduler.getDefault().addPeriodic(this::updateSimulation);
     }
   }
 
-  // THE ONE RULE: a hold never finishes, so never WAIT on a hold - it sticks in a sequence
-  // forever. Need a finish line? Add it at the call site:
-  //
-  //   arm.scoring().until(arm::atScoring)   // finishes when the arm arrives
-  //
-  // The "(hold)" in each name shows up on the dashboard and in logs - a stuck sequence sitting
-  // on a "(hold)" is the bug.
+  // Holds never finish - never WAIT on one. Finish line goes at the call site:
+  //   arm.scoring().until(arm::atPosition)
+  // "(hold)" in the name shows on the dashboard - a stuck sequence sitting on a "(hold)" is the
+  // bug.
 
-  /** Move to the vertical (stowed) position and hold it. Never finishes - see the rule above. */
+  /** 90°, stowed. */
   public Command vertical() {
-    return runRepeatedly(() -> setPosition(VERTICAL_POSITION)).named("vertical (hold)");
+    return runRepeatedly(() -> motor.setControl(positionOut.withPosition(0.25)))
+        .named("vertical (hold)");
   }
 
-  /** Move to the horizontal (ground intake) position and hold it. Never finishes. */
+  /** 180°, ground intake. */
   public Command horizontal() {
-    return runRepeatedly(() -> setPosition(HORIZONTAL_POSITION)).named("horizontal (hold)");
+    return runRepeatedly(() -> motor.setControl(positionOut.withPosition(0.5)))
+        .named("horizontal (hold)");
   }
 
-  /** Move to the scoring position and hold it. Never finishes. */
+  /** ~30°, scoring. */
   public Command scoring() {
-    return runRepeatedly(() -> setPosition(SCORING_POSITION)).named("scoring (hold)");
+    return runRepeatedly(() -> motor.setControl(positionOut.withPosition(0.083)))
+        .named("scoring (hold)");
   }
 
-  // You have to NAME the pose you are waiting for. There is no isAtTarget(): a no-argument version
-  // asks the motor "are you there yet" without saying where "there" is, and chained moves then
-  // read the PREVIOUS move's answer and finish instantly.
-
-  /** True once the arm has stopped at the vertical (stowed) position. */
-  public boolean atVertical() {
-    return isAt(VERTICAL_POSITION);
-  }
-
-  /** True once the arm has stopped at the horizontal (ground intake) position. */
-  public boolean atHorizontal() {
-    return isAt(HORIZONTAL_POSITION);
-  }
-
-  /** True once the arm has stopped at the scoring position. */
-  public boolean atScoring() {
-    return isAt(SCORING_POSITION);
-  }
-
-  /**
-   * True when the arm is within tolerance of {@code goalRotations} <i>and</i> Motion Magic has
-   * finished its plan. Both halves matter: the motor's "MotionMagicAtTarget" rules out arriving
-   * while still slewing through the goal (and is false before anything commands the arm, so this
-   * can't report success at startup), and comparing measured position to the goal you pass in is
-   * what makes it safe to chain moves.
-   *
-   * <p>Not closed-loop error - that is the miss against the profile's <i>moving</i> setpoint, which
-   * sits near zero for the whole move and so never tells you the arm arrived.
-   */
-  public boolean isAt(double goalRotations) {
+  /** True once the arm has stopped at the last position a hold asked for. */
+  @AutoLogOutput(key = "Arm/AtPosition")
+  public boolean atPosition() {
     return motor.getMotionMagicAtTarget()
-        && Math.abs(getPosition().in(Rotations) - goalRotations) <= TOLERANCE.in(Rotations);
+        && Math.abs(getPositionRot() - positionOut.Position) <= Degrees.of(1.0).in(Rotations);
   }
 
-  /** Where the arm is right now, in degrees. Logged so you can graph it in AdvantageScope. */
   @AutoLogOutput(key = "Arm/AngleDegrees")
   public double getAngleDegrees() {
-    return getPosition().in(Degrees);
+    return Rotations.of(getPositionRot()).in(Degrees);
   }
 
-  /**
-   * The angle Motion Magic is aiming at <i>this instant</i>, in degrees. Motion Magic ramps toward
-   * the final target, so this slides up to meet it - graph it against Arm/AngleDegrees to see how
-   * well the arm is keeping up.
-   */
+  /** Motion Magic's target THIS instant - it ramps up to meet the pose. */
   @AutoLogOutput(key = "Arm/TargetDegrees")
   public double getTargetDegrees() {
-    return getTargetPosition().in(Degrees);
+    return Rotations.of(motor.getClosedLoopReference()).in(Degrees);
   }
 
-  /** Current measured arm angle. */
-  public Angle getPosition() {
-    return Rotations.of(encoder.getPositionRot());
-  }
-
-  /** The angle the motor's closed loop is currently driving toward. */
-  public Angle getTargetPosition() {
-    return Rotations.of(motor.getClosedLoopReference());
-  }
-
-  private void setPosition(double rotations) {
-    motor.setControl(positionOut.withPosition(rotations));
+  private double getPositionRot() {
+    return encoder.getPositionRot();
   }
 
   // ---------------------------------------------------------------------------
-  // Simulation only: a physics model pretends to be the arm, so the same control
-  // code works with no robot plugged in.
+  // Simulation only: a physics model pretends to be the arm.
   // ---------------------------------------------------------------------------
 
   private static final double ARM_LENGTH_METERS = 0.5;
 
-  // Angles are radians here, and 0 = straight out horizontally (matches Arm_Cosine above).
+  // Radians here, 0 = horizontal (matches Arm_Cosine above).
   private final SingleJointedArmSim armSim =
       new SingleJointedArmSim(
           DCMotor.getKrakenX60(1),
           GEAR_RATIO,
           SingleJointedArmSim.estimateMOI(ARM_LENGTH_METERS, 4.0), // 4 kg arm
           ARM_LENGTH_METERS,
-          Math.toRadians(-10.0), // min - just past the low end
-          Math.toRadians(190.0), // max - just past the high end
-          true, // simulate gravity, so kG has something to fight
+          Math.toRadians(-10.0),
+          Math.toRadians(190.0),
+          true, // gravity on, so kG has something to fight
           0.0); // starts hanging straight out
 
   private void updateSimulation() {
@@ -208,11 +130,9 @@ public class Arm extends Mechanism {
     motorSim.setSupplyVoltage(RobotController.getBatteryVoltage());
     encoderSim.setSupplyVoltage(RobotController.getBatteryVoltage());
 
-    // Motor voltage in -> physics -> new arm angle out.
     armSim.setInputVoltage(motorSim.getMotorVoltage());
-    armSim.update(Robot.PERIOD_SECONDS); // one robot loop
+    armSim.update(Robot.PERIOD_SECONDS);
 
-    // Report the pretend arm back to both sensors, in rotations.
     double armRotations = armSim.getAngle() / (2 * Math.PI);
     double armRotationsPerSec = armSim.getVelocity() / (2 * Math.PI);
     encoderSim.setRawPosition(armRotations);

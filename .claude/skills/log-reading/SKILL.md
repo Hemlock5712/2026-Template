@@ -92,8 +92,10 @@ they have no `/RealOutputs/` prefix; the derived speeds below still do:
 | `/RealOutputs/BringUp/Arm/MeasuredRatio` | `double` | Measured rotor:mechanism ratio, signed, sampled at the furthest travel so far. `NaN` until the arm has moved. See the `device-bringup` skill |
 | `/RealOutputs/BringUp/Arm/SensorTravelRot` | `double` | Rotor travel the ratio above was measured over |
 | `/RealOutputs/Hardware/TalonFX/<name>/Request` | `string` | The control request last sent to that motor |
-| `/RealOutputs/Flywheel/SpeedRps` | `double` | Measured wheel speed, rotations/sec (target is 25) |
-| `/RealOutputs/Flywheel/AtTarget` | `boolean` | `Flywheel.isAtTarget()` — measured speed within tolerance of 25 rps. The arm has no equivalent key: it has three poses, so it has `atVertical()` / `atHorizontal()` / `atScoring()` instead. Graph `Arm/AngleDegrees` against `Arm/TargetDegrees` |
+| `/RealOutputs/Flywheel/SpeedRps` | `double` | Measured wheel speed, rotations/sec (spinUp = 25) |
+| `/RealOutputs/Flywheel/TargetRps` | `double` | Speed the wheel is driving toward — graph against `SpeedRps` |
+| `/RealOutputs/Flywheel/AtSpeed` | `boolean` | `Flywheel.atSpeed()` — measured speed within 0.25 rps of the last requested speed (`spinUp` = 25, `stop` = 0) |
+| `/RealOutputs/Arm/AtPosition` | `boolean` | `Arm.atPosition()` — arm stopped within 1° of the last requested pose |
 | `/RealOutputs/Superstructure/Scoring` | `boolean` | True while the StateMachine demo is in its Scoring state. **Only written by the "State Machine (no driving)" teleop** — absent from every log in `logs/` today, because nothing has run that OpMode. |
 
 Also present, logged by AdvantageKit itself (all verified in a real sim log):

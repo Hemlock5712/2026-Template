@@ -47,9 +47,9 @@ Getters return plain numbers, not `StatusSignal`s: `motor.getVelocityRps()`,
 `motor.getClosedLoopError()`, `encoder.getPositionRot()`. Anything the wrapper doesn't cover is on
 `motor.device()` — but reads there do **not** replay.
 
-If you configure a **CANcoder**, `refresh()` the existing config first — `apply()` writes every
-field, so building a fresh config zeroes the `MagnetOffset` set in Tuner X. Go through
-`encoder.device().getConfigurator()`. See `Arm`.
+**CANcoder settings (magnet offset, 0..1 discontinuity) live on the device, set in Tuner X** —
+never apply a `CANcoderConfiguration` from code; `apply()` writes every field and would zero the
+offset.
 
 A CANcoder fused into a TalonFX with `withRemoteCANcoder` **must be on the same CAN bus as that
 TalonFX**. Nothing in the code stops you splitting them; it fails on hardware.
@@ -57,32 +57,31 @@ TalonFX**. Nothing in the code stops you splitting them; it fails on hardware.
 ### 3. Write the commands
 
 ```java
+/** ~30°, scoring. */
 public Command scoring() {
-  return runRepeatedly(() -> setPosition(SCORING_POSITION)).named("scoring (hold)");
+  return runRepeatedly(() -> motor.setControl(positionOut.withPosition(0.083)))
+      .named("scoring (hold)");
 }
 ```
+
+One method per pose, setpoint inline — no constants block up top, no shared helper.
 
 **Every one of these is a hold — it never finishes.** Name it `(hold)` so a stuck routine is
 obvious on the dashboard. Never add an "...AndWait" variant; the finish line goes at the call site
 with `.until(...)`. See "Holds never finish" in [ONBOARDING.md](ONBOARDING.md).
 
-### 4. Write an "arrived" test — one per goal, never a bare `isAtTarget()`
+### 4. Write ONE "arrived" test against the last requested setpoint
 
-**Compare the measured position against the goal you pass in.** For a Motion Magic **position**
-mechanism (see `Arm`):
+For a Motion Magic **position** mechanism (see `Arm`):
 
 ```java
-public boolean atScoring() {
-  return isAt(SCORING_POSITION);
-}
-
-public boolean isAt(double goalRotations) {
+public boolean atPosition() {
   return motor.getMotionMagicAtTarget()
-      && Math.abs(getPosition().in(Rotations) - goalRotations) <= TOLERANCE.in(Rotations);
+      && Math.abs(getPositionRot() - positionOut.Position) <= Degrees.of(1.0).in(Rotations);
 }
 ```
 
-For **velocity**, compare `getVelocityRps()` to the commanded speed (see `Flywheel`).
+For **velocity**, same shape against `velocityOut.Velocity` (see `Flywheel.atSpeed`).
 
 Two traps, both of which produce a routine that silently skips a step:
 
@@ -91,13 +90,12 @@ Two traps, both of which produce a routine that silently skips a step:
   goal — so it sits near zero for the whole move and reads "arrived" the moment you command
   anything. Same reason you can't use `getClosedLoopReference()` as the target. This bit both the
   arm and the flywheel here before it was caught.
-- **Never a no-argument `isAtTarget()`.** `LoggedHardware.refreshAll()` snapshots every signal once
-  at the top of the loop, and `.until(...)` checks its condition before the command body runs — so
-  on the first loop of a chained move, the motor's `MotionMagicAtTarget` still holds the *previous*
-  move's `true` and the step finishes instantly without moving. Naming the goal in the predicate
-  makes that impossible, because the position comparison can't be stale about where you asked it to
-  go. A remembered `goalRotations` field does **not** fix this — the field is stale on that same
-  first loop.
+- **First-loop staleness.** `.until(...)` checks its condition *before* the hold body runs on the
+  first loop of a chained move, so `positionOut.Position` still holds the *previous* pose and the
+  motor's `MotionMagicAtTarget` is still the previous `true`. If the mechanism is already sitting at
+  that previous pose, the step can finish instantly without moving. Keep this in mind when a
+  `.until(mech::atPosition)` step follows a hold at a different pose; `ArmState` sidesteps it with
+  its `current == requested` guard.
 
 `getMotionMagicAtTarget()` still earns its place in the `&&`: it is false before anything commands
 the mechanism (so nothing reports success at startup) and it rules out "arrived" firing while the

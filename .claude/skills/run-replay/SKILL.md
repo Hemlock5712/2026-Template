@@ -35,7 +35,7 @@ Replay only re-runs decisions that live in **our** code.
 
 | Re-runs | Does not |
 | --- | --- |
-| `isAtTarget`, jam/stall rules, any threshold | TalonFX closed-loop gains — those run *on the motor* |
+| `atPosition` / `atSpeed`, jam/stall rules, any threshold | TalonFX closed-loop gains — those run *on the motor* |
 | Command and OpMode logic, autos, state machines | CTRE's `Drivetrain/Pose` — its own 250 Hz native thread |
 | Vision gates and trust numbers ([Vision.java](../../src/main/java/frc/robot/subsystems/vision/Vision.java)) | The MegaTag solve itself (needs the raw image) |
 | Tag-space alignment ([DriveToTag](../../src/main/java/frc/robot/commands/DriveToTag.java)) | |
